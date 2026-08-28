@@ -20,7 +20,10 @@ Usage:
     python cli.py webhooks poll
     python cli.py webhooks daemon --iterations 3
     python cli.py audit
-    python cli.py audit log --action add_investor
+    python cli.py audit record --action board_approval --detail "409A signed"
+    python cli.py health
+    python cli.py snapshot create --label "pre-series-a"
+    python cli.py sync-daemon --iterations 3
 """
 
 import argparse
@@ -315,6 +318,57 @@ def cmd_audit_log(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+def cmd_health(args: argparse.Namespace) -> None:
+    tools = _load_advanced()
+    result = json.loads(tools.run_health_check())
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_snapshot_create(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.create_cap_table_snapshot(args.label))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_snapshot_list(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.list_cap_table_snapshots(limit=args.limit))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_snapshot_compare(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.compare_cap_table_snapshots(args.snapshot_a, args.snapshot_b)
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_sync_daemon(args: argparse.Namespace) -> None:
+    from agno.tools.startup_stock.sync_daemon import CapTableSyncDaemon
+
+    tools = _load_advanced()
+
+    def sync_fn(dry_run: bool) -> dict:
+        return json.loads(tools.sync_cap_table(dry_run=dry_run))
+
+    daemon = CapTableSyncDaemon(
+        sync_fn=sync_fn,
+        poll_interval_seconds=args.interval,
+        dry_run=not args.live,
+        on_sync=lambda r: print(json.dumps(r)),
+    )
+    daemon.run(max_iterations=args.iterations)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Startup Stock CLI - tokenized equity cap table manager",
@@ -452,6 +506,34 @@ def main() -> None:
     audit_record.add_argument("--target", help="Target wallet or resource")
     audit_record.add_argument("--detail", help="Optional detail text")
 
+    subparsers.add_parser("health", help="Run infrastructure health checks")
+
+    snapshot_parser = subparsers.add_parser(
+        "snapshot", help="Cap table snapshot commands"
+    )
+    snapshot_sub = snapshot_parser.add_subparsers(
+        dest="snapshot_command", required=True
+    )
+
+    snapshot_create = snapshot_sub.add_parser("create", help="Create a snapshot")
+    snapshot_create.add_argument("--label", required=True, help="Snapshot label")
+
+    snapshot_list = snapshot_sub.add_parser("list", help="List snapshots")
+    snapshot_list.add_argument("--limit", type=int, default=20)
+
+    snapshot_compare = snapshot_sub.add_parser("compare", help="Compare two snapshots")
+    snapshot_compare.add_argument("--snapshot-a", required=True)
+    snapshot_compare.add_argument("--snapshot-b", required=True)
+
+    sync_daemon_parser = subparsers.add_parser(
+        "sync-daemon", help="Run cap table sync daemon"
+    )
+    sync_daemon_parser.add_argument("--iterations", type=int, default=None)
+    sync_daemon_parser.add_argument("--interval", type=float, default=300.0)
+    sync_daemon_parser.add_argument(
+        "--live", action="store_true", help="Live sync (default dry-run)"
+    )
+
     args = parser.parse_args()
 
     if args.command == "vesting":
@@ -483,6 +565,19 @@ def main() -> None:
             cmd_audit_log(args)
         return
 
+    if args.command == "snapshot":
+        if args.snapshot_command == "create":
+            cmd_snapshot_create(args)
+        elif args.snapshot_command == "list":
+            cmd_snapshot_list(args)
+        elif args.snapshot_command == "compare":
+            cmd_snapshot_compare(args)
+        return
+
+    if args.command == "sync-daemon":
+        cmd_sync_daemon(args)
+        return
+
     commands = {
         "info": cmd_info,
         "add": cmd_add,
@@ -497,6 +592,7 @@ def main() -> None:
         "report": cmd_report,
         "export": cmd_export,
         "dilution": cmd_dilution,
+        "health": cmd_health,
     }
     commands[args.command](args)
 
