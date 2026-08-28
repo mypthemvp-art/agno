@@ -21,7 +21,11 @@ from agno.db.sqlite import SqliteDb
 from agno.models.openai import OpenAIResponses
 from agno.os import AgentOS
 from agno.tools.finance import FinanceTools
-from agno.tools.startup_stock import StartupStockReader, StartupStockTools
+from agno.tools.startup_stock import (
+    StartupStockAdvancedTools,
+    StartupStockReader,
+    StartupStockTools,
+)
 from pydantic import BaseModel
 
 
@@ -64,10 +68,31 @@ founder_agent = Agent(
     markdown=True,
 )
 
+advanced_founder_agent = Agent(
+    id="startup-stock-advanced-founder",
+    name="Startup Stock Advanced Founder",
+    model=OpenAIResponses(id="gpt-5.5"),
+    db=db,
+    tools=[
+        StartupStockAdvancedTools(enable_webhooks=False, enable_deploy_extended=False),
+        FinanceTools(),
+    ],
+    output_schema=EquityReport,
+    instructions=[
+        "You help founders with advanced equity operations: vesting, dilution, reports, and audit.",
+        "Use equity reports and dilution modeling for funding scenarios.",
+        "Check audit logs for compliance. Preview sync with dry_run=True.",
+        "Never expose or request private keys.",
+    ],
+    add_history_to_context=True,
+    num_history_runs=3,
+    markdown=True,
+)
+
 agent_os = AgentOS(
     id="startup-stock-os",
     description="Tokenized startup equity management for founders and investors.",
-    agents=[investor_agent, founder_agent],
+    agents=[investor_agent, founder_agent, advanced_founder_agent],
 )
 app = agent_os.get_app()
 

@@ -19,6 +19,8 @@ Usage:
     python cli.py vesting create --wallet 0x742d... --shares 10000
     python cli.py webhooks poll
     python cli.py webhooks daemon --iterations 3
+    python cli.py audit
+    python cli.py audit log --action add_investor
 """
 
 import argparse
@@ -293,6 +295,26 @@ def cmd_webhooks_daemon(args: argparse.Namespace) -> None:
     daemon.run(max_iterations=args.iterations)
 
 
+def cmd_audit(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.get_audit_log(limit=args.limit, action=args.action))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_audit_log(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.log_audit_event(
+            action=args.action, target=args.target, detail=args.detail
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Startup Stock CLI - tokenized equity cap table manager",
@@ -418,6 +440,18 @@ def main() -> None:
     webhooks_daemon.add_argument("--interval", type=float, default=15.0)
     webhooks_daemon.add_argument("--lookback", type=int, default=50)
 
+    audit_parser = subparsers.add_parser("audit", help="Audit log commands")
+    audit_sub = audit_parser.add_subparsers(dest="audit_command", required=True)
+
+    audit_list = audit_sub.add_parser("list", help="List audit log entries")
+    audit_list.add_argument("--limit", type=int, default=50)
+    audit_list.add_argument("--action", help="Filter by action name")
+
+    audit_record = audit_sub.add_parser("record", help="Record a manual audit event")
+    audit_record.add_argument("--action", required=True)
+    audit_record.add_argument("--target", help="Target wallet or resource")
+    audit_record.add_argument("--detail", help="Optional detail text")
+
     args = parser.parse_args()
 
     if args.command == "vesting":
@@ -440,6 +474,13 @@ def main() -> None:
             cmd_webhooks_poll(args)
         elif args.webhooks_command == "daemon":
             cmd_webhooks_daemon(args)
+        return
+
+    if args.command == "audit":
+        if args.audit_command == "list":
+            cmd_audit(args)
+        elif args.audit_command == "record":
+            cmd_audit_log(args)
         return
 
     commands = {

@@ -24,6 +24,9 @@ Works on macOS, Linux, and Windows via Python.
 - **Compliance Export** — Export equity reports to JSON/CSV for audit
 - **Webhook Daemon** — Continuous background polling for transfer events
 - **Extended Deploy** — Deploy VestingVault and MultiSig via Foundry
+- **Audit Trail** — SQLite audit log for cap table and equity operations
+- **Equity Intelligence Agent** — AI advisor combining cap table, vesting, dilution, and market comps
+- **Full Pipeline** — End-to-end lifecycle demo (import → sync → vest → report → audit)
 - **AI Agent** — Natural-language cap table management with structured output
 
 ## Prerequisites
@@ -93,6 +96,8 @@ print(tools.sync_cap_table(dry_run=False))
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py webhooks poll
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py deploy-vault
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py deploy-multisig --owners 0x111...,0x222... --required 2
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py audit list
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py audit record --action board_approval --detail "409A signed"
 ```
 
 ## Examples
@@ -109,6 +114,8 @@ print(tools.sync_cap_table(dry_run=False))
 | `08_transfer_webhooks.py` | Transfer event webhook delivery |
 | `09_equity_report.py` | Equity reports, dilution modeling, compliance export |
 | `10_webhook_daemon.py` | Continuous webhook polling daemon |
+| `11_equity_intelligence_agent.py` | AI equity advisor with dilution and market comps |
+| `12_full_pipeline.py` | End-to-end lifecycle demo |
 | `menubar.py` | macOS menu bar app (requires `pip install rumps`) |
 | `cli.py` | macOS/Linux CLI for cap table operations |
 | `sample_cap_table.csv` | Sample CSV cap table for import |

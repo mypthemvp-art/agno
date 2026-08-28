@@ -39,3 +39,19 @@
 **Description:** Continuous transfer webhook polling daemon.
 
 ---
+
+### 11_equity_intelligence_agent.py
+
+**Status:** PENDING
+
+**Description:** AI equity advisor with vesting, dilution, and market comps.
+
+---
+
+### 12_full_pipeline.py
+
+**Status:** PENDING
+
+**Description:** End-to-end lifecycle demo from import to audit.
+
+---

@@ -1,6 +1,7 @@
 """Startup stock tokenization tools for blockchain-based equity management."""
 
 from agno.tools.startup_stock.advanced import StartupStockAdvancedTools
+from agno.tools.startup_stock.audit import AuditEvent, AuditStore
 from agno.tools.startup_stock.base import shares_to_wei, wei_to_shares
 from agno.tools.startup_stock.deploy import (
     deploy_multisig,
@@ -15,6 +16,13 @@ from agno.tools.startup_stock.reports import (
     export_compliance_report,
     generate_equity_report,
 )
+from agno.tools.startup_stock.schemas import (
+    DilutionImpact,
+    EquityIntelligenceReport,
+    InvestorOwnership,
+    PipelineStatus,
+    VestingSummary,
+)
 from agno.tools.startup_stock.sync import CapTableEntry, CapTableStore, CapTableSyncEngine, SyncResult, SyncStatus
 from agno.tools.startup_stock.toolkit import StartupStockTools
 from agno.tools.startup_stock.vesting import VestingSchedule, VestingStore
@@ -22,10 +30,16 @@ from agno.tools.startup_stock.webhook_daemon import TransferWebhookDaemon
 from agno.tools.startup_stock.webhooks import TransferWebhookWatcher, WebhookDeliveryStore
 
 __all__ = [
+    "AuditEvent",
+    "AuditStore",
     "CapTableEntry",
     "CapTableStore",
     "CapTableSyncEngine",
+    "DilutionImpact",
     "DilutionScenario",
+    "EquityIntelligenceReport",
+    "InvestorOwnership",
+    "PipelineStatus",
     "StartupStockAdvancedTools",
     "StartupStockReader",
     "StartupStockTools",
@@ -35,6 +49,7 @@ __all__ = [
     "TransferWebhookWatcher",
     "VestingSchedule",
     "VestingStore",
+    "VestingSummary",
     "WebhookDeliveryStore",
     "calculate_dilution",
     "deploy_multisig",

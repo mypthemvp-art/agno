@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, Callable, List, Optional
 
+from agno.tools.startup_stock.audit import AuditStore
 from agno.tools.startup_stock.deploy import deploy_multisig, deploy_vesting_vault
 from agno.tools.startup_stock.multisig import MultiSigManager
 from agno.tools.startup_stock.reports import (
@@ -47,6 +48,7 @@ class StartupStockAdvancedTools(StartupStockTools):
         enable_webhooks: bool = True,
         enable_reports: bool = True,
         enable_deploy_extended: bool = True,
+        enable_audit: bool = True,
         all_advanced: bool = False,
         **kwargs,
     ):
@@ -55,6 +57,7 @@ class StartupStockAdvancedTools(StartupStockTools):
         self._enable_webhooks = all_advanced or enable_webhooks
         self._enable_reports = all_advanced or enable_reports
         self._enable_deploy_extended = all_advanced or enable_deploy_extended
+        self._enable_audit = all_advanced or enable_audit
 
         super().__init__(**kwargs)
 
@@ -64,8 +67,10 @@ class StartupStockAdvancedTools(StartupStockTools):
 
         vesting_db = str(Path(gettempdir()) / "startup_stock_vesting.db")
         webhook_db = str(Path(gettempdir()) / "startup_stock_webhooks.db")
+        audit_db = str(Path(gettempdir()) / "startup_stock_audit.db")
         self.vesting_store = VestingStore(vesting_db)
         self.webhook_store = WebhookDeliveryStore(webhook_db)
+        self.audit_store = AuditStore(audit_db)
 
         assert self.private_key is not None
         self.vesting_manager = VestingManager(
@@ -161,10 +166,71 @@ class StartupStockAdvancedTools(StartupStockTools):
                 ]
             )
 
+        if self._enable_audit:
+            extra_tools.extend([self.get_audit_log, self.log_audit_event])
+            extra_async.extend(
+                [
+                    (self.aget_audit_log, "get_audit_log"),
+                    (self.alog_audit_event, "log_audit_event"),
+                ]
+            )
+
         for tool in extra_tools:
             self.register(tool)
         for async_fn, tool_name in extra_async:
             self.register(async_fn, name=tool_name)
+
+    def _log_audit(
+        self,
+        action: str,
+        target: Optional[str] = None,
+        detail: Optional[Any] = None,
+    ) -> None:
+        if self._enable_audit:
+            self.audit_store.record(action=action, actor=self.account.address, target=target, detail=detail)
+
+    # -------------------------------------------------------------------------
+    # Cap table overrides (with audit trail)
+    # -------------------------------------------------------------------------
+
+    def add_investor(self, investor_name: str, wallet_address: str, shares: float) -> str:
+        result = super().add_investor(investor_name, wallet_address, shares)
+        self._log_audit(
+            "add_investor",
+            target=wallet_address.lower(),
+            detail={"investor_name": investor_name, "shares": shares},
+        )
+        return result
+
+    def sync_cap_table(self, dry_run: bool = True) -> str:
+        result = super().sync_cap_table(dry_run=dry_run)
+        self._log_audit("sync_cap_table", detail={"dry_run": dry_run})
+        return result
+
+    # -------------------------------------------------------------------------
+    # Audit tools
+    # -------------------------------------------------------------------------
+
+    def get_audit_log(self, limit: int = 50, action: Optional[str] = None) -> str:
+        """Get recent audit log entries for compliance review."""
+        try:
+            events = [e.to_dict() for e in self.audit_store.list_events(limit=limit, action=action)]
+            return _to_json({"events": events, "count": len(events)})
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def log_audit_event(self, action: str, target: Optional[str] = None, detail: Optional[str] = None) -> str:
+        """Manually record an audit event (e.g. board approval, 409A valuation)."""
+        try:
+            event = self.audit_store.record(
+                action=action,
+                actor=self.account.address,
+                target=target,
+                detail=detail,
+            )
+            return _to_json(event.to_dict())
+        except Exception as e:
+            return _to_json({"error": str(e), "action": action})
 
     # -------------------------------------------------------------------------
     # Vesting tools
@@ -205,6 +271,11 @@ class StartupStockAdvancedTools(StartupStockTools):
                     self._send_contract_tx,
                 )
 
+            self._log_audit(
+                "create_vesting_schedule",
+                target=beneficiary.lower(),
+                detail={"total_shares": total_shares, "tx_hash": tx_hash},
+            )
             return _to_json({**schedule.to_dict(), "tx_hash": tx_hash})
         except Exception as e:
             return _to_json({"error": str(e), "beneficiary": beneficiary})
@@ -255,6 +326,11 @@ class StartupStockAdvancedTools(StartupStockTools):
                 local.released_shares += releasable
                 self.vesting_store.upsert(local)
 
+            self._log_audit(
+                "release_vested_shares",
+                target=beneficiary.lower(),
+                detail={"released_shares": releasable, "tx_hash": tx_hash},
+            )
             return _to_json(
                 {
                     "beneficiary": beneficiary.lower(),
@@ -286,6 +362,7 @@ class StartupStockAdvancedTools(StartupStockTools):
         try:
             data = bytes.fromhex(data_hex.removeprefix("0x"))
             tx_hash = self._require_multisig().submit_transaction(target, data, value_wei, self._send_contract_tx)
+            self._log_audit("submit_multisig_transaction", target=target.lower(), detail={"tx_hash": tx_hash})
             return _to_json({"target": target.lower(), "tx_hash": tx_hash})
         except Exception as e:
             return _to_json({"error": str(e), "target": target})
@@ -294,6 +371,7 @@ class StartupStockAdvancedTools(StartupStockTools):
         """Confirm a pending multi-sig transaction."""
         try:
             tx_hash = self._require_multisig().confirm_transaction(tx_id, self._send_contract_tx)
+            self._log_audit("confirm_multisig_transaction", detail={"tx_id": tx_id, "tx_hash": tx_hash})
             return _to_json({"tx_id": tx_id, "tx_hash": tx_hash})
         except Exception as e:
             return _to_json({"error": str(e), "tx_id": tx_id})
@@ -401,6 +479,7 @@ class StartupStockAdvancedTools(StartupStockTools):
                 wei_to_shares=wei_to_shares,
             )
             result = export_report(report, file_path, fmt=fmt)
+            self._log_audit("export_compliance_report", detail={"file_path": file_path, "format": fmt})
             return _to_json(result)
         except Exception as e:
             return _to_json({"error": str(e), "file_path": file_path})
@@ -506,3 +585,9 @@ class StartupStockAdvancedTools(StartupStockTools):
 
     async def adeploy_multisig(self, owners_csv: str, required: int) -> str:
         return self.deploy_multisig(owners_csv, required)
+
+    async def aget_audit_log(self, limit: int = 50, action: Optional[str] = None) -> str:
+        return self.get_audit_log(limit=limit, action=action)
+
+    async def alog_audit_event(self, action: str, target: Optional[str] = None, detail: Optional[str] = None) -> str:
+        return self.log_audit_event(action, target=target, detail=detail)
