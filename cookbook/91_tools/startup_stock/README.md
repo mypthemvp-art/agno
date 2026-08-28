@@ -15,6 +15,10 @@ Works on macOS, Linux, and Windows via Python.
 - **Contract Deploy** — Deploy via Foundry (`forge`) from Python or CLI
 - **macOS CLI** — Command-line interface for startup founders (`cli.py`)
 - **AgentOS API** — Serve founder and investor agents over HTTP
+- **Vesting Schedules** — Linear vesting with cliff via `VestingVault.sol`
+- **Multi-Sig Owner** — M-of-N multisig for privileged token operations
+- **Transfer Webhooks** — HTTP webhook delivery on Transfer/Mint events
+- **macOS Menu Bar App** — Native menu bar monitor (`menubar.py`, requires `rumps`)
 - **AI Agent** — Natural-language cap table management with structured output
 
 ## Prerequisites
@@ -88,6 +92,10 @@ print(tools.sync_cap_table(dry_run=False))
 | `03_import_and_reconcile.py` | Import CSV cap table and reconcile on-chain |
 | `04_deploy_contract.py` | Deploy StartupStockToken via Foundry |
 | `05_agentos_startup_stock.py` | AgentOS API for founders and investors |
+| `06_vesting_schedule.py` | Create and manage vesting schedules |
+| `07_multisig_owner.py` | Multi-sig owner transaction flow |
+| `08_transfer_webhooks.py` | Transfer event webhook delivery |
+| `menubar.py` | macOS menu bar app (requires `pip install rumps`) |
 | `cli.py` | macOS/Linux CLI for cap table operations |
 | `sample_cap_table.csv` | Sample CSV cap table for import |
 | `contracts/StartupStockToken.sol` | ERC-20 startup equity smart contract |
