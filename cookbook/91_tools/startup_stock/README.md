@@ -19,6 +19,14 @@ Works on macOS, Linux, and Windows via Python.
 - **Multi-Sig Owner** — M-of-N multisig for privileged token operations
 - **Transfer Webhooks** — HTTP webhook delivery on Transfer/Mint events
 - **macOS Menu Bar App** — Native menu bar monitor (`menubar.py`, requires `rumps`)
+- **Equity Reports** — Cap table reports with on-chain verification and vesting status
+- **Dilution Modeling** — Model ownership dilution across funding scenarios
+- **Compliance Export** — Export equity reports to JSON/CSV for audit
+- **Webhook Daemon** — Continuous background polling for transfer events
+- **Extended Deploy** — Deploy VestingVault and MultiSig via Foundry
+- **Audit Trail** — SQLite audit log for cap table and equity operations
+- **Equity Intelligence Agent** — AI advisor combining cap table, vesting, dilution, and market comps
+- **Full Pipeline** — End-to-end lifecycle demo (import → sync → vest → report → audit)
 - **AI Agent** — Natural-language cap table management with structured output
 
 ## Prerequisites
@@ -81,6 +89,15 @@ print(tools.sync_cap_table(dry_run=False))
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py balance --wallet 0x742d... --readonly
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py sync --dry-run
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py sync --live
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py report
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py export --file report.json
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py dilution --name "Series A" --new-shares 20000
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py vesting create --wallet 0x742d... --shares 10000
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py webhooks poll
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py deploy-vault
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py deploy-multisig --owners 0x111...,0x222... --required 2
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py audit list
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py audit record --action board_approval --detail "409A signed"
 ```
 
 ## Examples
@@ -95,10 +112,16 @@ print(tools.sync_cap_table(dry_run=False))
 | `06_vesting_schedule.py` | Create and manage vesting schedules |
 | `07_multisig_owner.py` | Multi-sig owner transaction flow |
 | `08_transfer_webhooks.py` | Transfer event webhook delivery |
+| `09_equity_report.py` | Equity reports, dilution modeling, compliance export |
+| `10_webhook_daemon.py` | Continuous webhook polling daemon |
+| `11_equity_intelligence_agent.py` | AI equity advisor with dilution and market comps |
+| `12_full_pipeline.py` | End-to-end lifecycle demo |
 | `menubar.py` | macOS menu bar app (requires `pip install rumps`) |
 | `cli.py` | macOS/Linux CLI for cap table operations |
 | `sample_cap_table.csv` | Sample CSV cap table for import |
 | `contracts/StartupStockToken.sol` | ERC-20 startup equity smart contract |
+| `contracts/VestingVault.sol` | Linear vesting vault with cliff |
+| `contracts/StartupStockMultiSig.sol` | M-of-N multisig for privileged operations |
 
 ## Security
 

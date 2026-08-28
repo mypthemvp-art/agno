@@ -13,6 +13,14 @@ Usage:
     python cli.py sync --dry-run
     python cli.py sync --live
     python cli.py deploy --name "Acme Startup" --symbol ACME --max-shares 1000000
+    python cli.py report
+    python cli.py export --file report.json
+    python cli.py dilution --name "Series A" --new-shares 20000
+    python cli.py vesting create --wallet 0x742d... --shares 10000
+    python cli.py webhooks poll
+    python cli.py webhooks daemon --iterations 3
+    python cli.py audit
+    python cli.py audit log --action add_investor
 """
 
 import argparse
@@ -35,6 +43,19 @@ def _load_tools(require_contract: bool = True):
     return StartupStockTools()
 
 
+def _load_advanced(require_contract: bool = True):
+    from agno.tools.startup_stock import StartupStockAdvancedTools
+
+    if require_contract and not os.getenv("STARTUP_STOCK_CONTRACT_ADDRESS"):
+        print(
+            "Error: Set STARTUP_STOCK_CONTRACT_ADDRESS environment variable.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return StartupStockAdvancedTools()
+
+
 def _load_reader():
     from agno.tools.startup_stock import StartupStockReader
 
@@ -48,6 +69,11 @@ def _load_reader():
     return StartupStockReader()
 
 
+def _print_error(result: dict) -> None:
+    print(f"Error: {result['error']}", file=sys.stderr)
+    sys.exit(1)
+
+
 def cmd_info(args: argparse.Namespace) -> None:
     tools = _load_tools()
     print(json.dumps(json.loads(tools.get_token_info()), indent=2))
@@ -57,8 +83,7 @@ def cmd_add(args: argparse.Namespace) -> None:
     tools = _load_tools(require_contract=False)
     result = json.loads(tools.add_investor(args.name, args.wallet, args.shares))
     if "error" in result:
-        print(f"Error: {result['error']}", file=sys.stderr)
-        sys.exit(1)
+        _print_error(result)
     print(
         f"Added {result['investor_name']}: {result['shares']} shares ({result['status']})"
     )
@@ -90,8 +115,7 @@ def cmd_balance(args: argparse.Namespace) -> None:
         tools = _load_tools()
         result = json.loads(tools.get_investor_balance(args.wallet))
     if "error" in result:
-        print(f"Error: {result['error']}", file=sys.stderr)
-        sys.exit(1)
+        _print_error(result)
     print(f"Wallet: {result['wallet_address']}")
     print(f"Shares: {result['shares']:,.4f}")
 
@@ -100,8 +124,7 @@ def cmd_import(args: argparse.Namespace) -> None:
     tools = _load_tools(require_contract=False)
     result = json.loads(tools.import_cap_table(args.file))
     if "error" in result:
-        print(f"Error: {result['error']}", file=sys.stderr)
-        sys.exit(1)
+        _print_error(result)
     print(f"Imported {result['imported']} investors from {result['file_path']}")
 
 
@@ -109,8 +132,7 @@ def cmd_reconcile(args: argparse.Namespace) -> None:
     tools = _load_tools()
     result = json.loads(tools.reconcile_cap_table())
     if "error" in result:
-        print(f"Error: {result['error']}", file=sys.stderr)
-        sys.exit(1)
+        _print_error(result)
     print(f"Synced:  {result.get('synced', 0)}")
     print(f"Pending: {result.get('pending', 0)}")
     print(f"Drifted: {result.get('drifted', 0)}")
@@ -121,10 +143,27 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     tools = _load_tools(require_contract=False)
     result = json.loads(tools.deploy_token(args.name, args.symbol, args.max_shares))
     if "error" in result:
-        print(f"Error: {result['error']}", file=sys.stderr)
-        sys.exit(1)
+        _print_error(result)
     print(f"Deployed to: {result['contract_address']}")
     print(f"export STARTUP_STOCK_CONTRACT_ADDRESS={result['contract_address']}")
+
+
+def cmd_deploy_vault(args: argparse.Namespace) -> None:
+    tools = _load_advanced()
+    result = json.loads(tools.deploy_vesting_vault(token_address=args.token))
+    if "error" in result:
+        _print_error(result)
+    print(f"Deployed VestingVault to: {result['contract_address']}")
+    print(f"export STARTUP_STOCK_VESTING_VAULT={result['contract_address']}")
+
+
+def cmd_deploy_multisig(args: argparse.Namespace) -> None:
+    tools = _load_advanced()
+    result = json.loads(tools.deploy_multisig(args.owners, args.required))
+    if "error" in result:
+        _print_error(result)
+    print(f"Deployed MultiSig to: {result['contract_address']}")
+    print(f"export STARTUP_STOCK_MULTISIG_ADDRESS={result['contract_address']}")
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
@@ -132,8 +171,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
     dry_run = not args.live
     result = json.loads(tools.sync_cap_table(dry_run=dry_run))
     if "error" in result:
-        print(f"Error: {result['error']}", file=sys.stderr)
-        sys.exit(1)
+        _print_error(result)
 
     mode = "DRY RUN" if dry_run else "LIVE"
     print(f"Sync ({mode}) - run_id: {result['run_id']}")
@@ -151,6 +189,130 @@ def cmd_sync(args: argparse.Namespace) -> None:
         elif entry.get("mint_delta_wei"):
             extra = f" would_mint={entry['mint_delta_wei']} wei"
         print(f"  {name}: {status}{extra}")
+
+
+def cmd_report(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.generate_equity_report())
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_export(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.export_compliance_report(args.file, fmt=args.format))
+    if "error" in result:
+        _print_error(result)
+    print(
+        f"Exported {result['investor_count']} investors to {result['file_path']} ({result['format']})"
+    )
+
+
+def cmd_dilution(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.calculate_dilution(
+            scenario_name=args.name,
+            new_shares=args.new_shares,
+            option_pool_increase=args.option_pool,
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_vesting_create(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.create_vesting_schedule(
+            beneficiary=args.wallet,
+            total_shares=args.shares,
+            cliff_days=args.cliff_days,
+            vesting_days=args.vesting_days,
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_vesting_get(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.get_vesting_schedule(args.wallet))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_vesting_list(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.list_vesting_schedules())
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_vesting_release(args: argparse.Namespace) -> None:
+    tools = _load_advanced()
+    result = json.loads(tools.release_vested_shares(args.wallet))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_multisig_info(args: argparse.Namespace) -> None:
+    tools = _load_advanced()
+    result = json.loads(tools.get_multisig_info())
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_webhooks_poll(args: argparse.Namespace) -> None:
+    tools = _load_advanced()
+    result = json.loads(tools.poll_transfer_webhooks(lookback_blocks=args.lookback))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_webhooks_daemon(args: argparse.Namespace) -> None:
+    from agno.tools.startup_stock.webhook_daemon import TransferWebhookDaemon
+
+    tools = _load_advanced()
+    if not tools.webhook_url:
+        print("Error: Set STARTUP_STOCK_WEBHOOK_URL.", file=sys.stderr)
+        sys.exit(1)
+
+    daemon = TransferWebhookDaemon(
+        watcher=tools._build_webhook_watcher(),
+        poll_interval_seconds=args.interval,
+        lookback_blocks=args.lookback,
+        on_poll=lambda r: print(json.dumps(r)),
+    )
+    daemon.run(max_iterations=args.iterations)
+
+
+def cmd_audit(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.get_audit_log(limit=args.limit, action=args.action))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_audit_log(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.log_audit_event(
+            action=args.action, target=args.target, detail=args.detail
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
 
 
 def main() -> None:
@@ -196,6 +358,23 @@ def main() -> None:
         "--max-shares", type=float, required=True, help="Max supply in shares"
     )
 
+    deploy_vault_parser = subparsers.add_parser(
+        "deploy-vault", help="Deploy VestingVault (requires forge)"
+    )
+    deploy_vault_parser.add_argument(
+        "--token", help="Token address (defaults to STARTUP_STOCK_CONTRACT_ADDRESS)"
+    )
+
+    deploy_multisig_parser = subparsers.add_parser(
+        "deploy-multisig", help="Deploy StartupStockMultiSig (requires forge)"
+    )
+    deploy_multisig_parser.add_argument(
+        "--owners", required=True, help="Comma-separated owner addresses"
+    )
+    deploy_multisig_parser.add_argument(
+        "--required", type=int, required=True, help="Required confirmations (M)"
+    )
+
     sync_parser = subparsers.add_parser("sync", help="Sync cap table to blockchain")
     sync_parser.add_argument(
         "--dry-run", action="store_true", default=True, help="Preview only (default)"
@@ -204,7 +383,106 @@ def main() -> None:
         "--live", action="store_true", help="Execute on-chain minting"
     )
 
+    subparsers.add_parser("report", help="Generate equity report")
+
+    export_parser = subparsers.add_parser("export", help="Export compliance report")
+    export_parser.add_argument("--file", required=True, help="Output file path")
+    export_parser.add_argument(
+        "--format", choices=["json", "csv"], default="json", help="Export format"
+    )
+
+    dilution_parser = subparsers.add_parser("dilution", help="Model ownership dilution")
+    dilution_parser.add_argument("--name", required=True, help="Scenario name")
+    dilution_parser.add_argument(
+        "--new-shares", type=float, required=True, help="New shares issued"
+    )
+    dilution_parser.add_argument(
+        "--option-pool", type=float, default=0.0, help="Option pool increase"
+    )
+
+    vesting_parser = subparsers.add_parser("vesting", help="Vesting schedule commands")
+    vesting_sub = vesting_parser.add_subparsers(dest="vesting_command", required=True)
+
+    vesting_create = vesting_sub.add_parser("create", help="Create vesting schedule")
+    vesting_create.add_argument("--wallet", required=True)
+    vesting_create.add_argument("--shares", type=float, required=True)
+    vesting_create.add_argument("--cliff-days", type=int, default=365)
+    vesting_create.add_argument("--vesting-days", type=int, default=1460)
+
+    vesting_get = vesting_sub.add_parser("get", help="Get vesting schedule")
+    vesting_get.add_argument("--wallet", required=True)
+
+    vesting_sub.add_parser("list", help="List vesting schedules")
+
+    vesting_release = vesting_sub.add_parser("release", help="Release vested shares")
+    vesting_release.add_argument("--wallet", required=True)
+
+    multisig_parser = subparsers.add_parser("multisig", help="Multi-sig commands")
+    multisig_sub = multisig_parser.add_subparsers(
+        dest="multisig_command", required=True
+    )
+    multisig_sub.add_parser("info", help="Show multi-sig configuration")
+
+    webhooks_parser = subparsers.add_parser(
+        "webhooks", help="Transfer webhook commands"
+    )
+    webhooks_sub = webhooks_parser.add_subparsers(
+        dest="webhooks_command", required=True
+    )
+
+    webhooks_poll = webhooks_sub.add_parser(
+        "poll", help="Poll and deliver webhooks once"
+    )
+    webhooks_poll.add_argument("--lookback", type=int, default=100)
+
+    webhooks_daemon = webhooks_sub.add_parser("daemon", help="Run webhook daemon")
+    webhooks_daemon.add_argument("--iterations", type=int, default=None)
+    webhooks_daemon.add_argument("--interval", type=float, default=15.0)
+    webhooks_daemon.add_argument("--lookback", type=int, default=50)
+
+    audit_parser = subparsers.add_parser("audit", help="Audit log commands")
+    audit_sub = audit_parser.add_subparsers(dest="audit_command", required=True)
+
+    audit_list = audit_sub.add_parser("list", help="List audit log entries")
+    audit_list.add_argument("--limit", type=int, default=50)
+    audit_list.add_argument("--action", help="Filter by action name")
+
+    audit_record = audit_sub.add_parser("record", help="Record a manual audit event")
+    audit_record.add_argument("--action", required=True)
+    audit_record.add_argument("--target", help="Target wallet or resource")
+    audit_record.add_argument("--detail", help="Optional detail text")
+
     args = parser.parse_args()
+
+    if args.command == "vesting":
+        vesting_commands = {
+            "create": cmd_vesting_create,
+            "get": cmd_vesting_get,
+            "list": cmd_vesting_list,
+            "release": cmd_vesting_release,
+        }
+        vesting_commands[args.vesting_command](args)
+        return
+
+    if args.command == "multisig":
+        if args.multisig_command == "info":
+            cmd_multisig_info(args)
+        return
+
+    if args.command == "webhooks":
+        if args.webhooks_command == "poll":
+            cmd_webhooks_poll(args)
+        elif args.webhooks_command == "daemon":
+            cmd_webhooks_daemon(args)
+        return
+
+    if args.command == "audit":
+        if args.audit_command == "list":
+            cmd_audit(args)
+        elif args.audit_command == "record":
+            cmd_audit_log(args)
+        return
+
     commands = {
         "info": cmd_info,
         "add": cmd_add,
@@ -213,7 +491,12 @@ def main() -> None:
         "import": cmd_import,
         "reconcile": cmd_reconcile,
         "deploy": cmd_deploy,
+        "deploy-vault": cmd_deploy_vault,
+        "deploy-multisig": cmd_deploy_multisig,
         "sync": cmd_sync,
+        "report": cmd_report,
+        "export": cmd_export,
+        "dilution": cmd_dilution,
     }
     commands[args.command](args)
 
