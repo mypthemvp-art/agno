@@ -1,4 +1,4 @@
-"""Unit tests for startup stock sync engine and toolkit."""
+"""Unit tests for startup stock sync engine, import, reader, and toolkit."""
 
 import json
 import tempfile
@@ -7,6 +7,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from agno.tools.startup_stock.deploy import deploy_startup_stock_token
+from agno.tools.startup_stock.import_utils import (
+    import_cap_table_file,
+    import_cap_table_to_store,
+    reconcile_cap_table,
+)
+from agno.tools.startup_stock.reader import StartupStockReader
 from agno.tools.startup_stock.sync import (
     CapTableEntry,
     CapTableStore,
@@ -171,6 +178,95 @@ class TestCapTableSyncEngine:
         assert call_count == 2
 
 
+class TestImportUtils:
+    def test_import_csv(self, store, tmp_path):
+        csv_file = tmp_path / "cap.csv"
+        csv_file.write_text(
+            "investor_name,wallet_address,shares\n"
+            "Alice,0x742d35Cc6634C0532925a3b8D2A7E1234567890A,1000\n"
+            "Bob,0x3Dfc53E3C77bb4e30Ce333Be1a66Ce62558bE395,500\n"
+        )
+        result = import_cap_table_to_store(store, str(csv_file))
+        assert result["imported"] == 2
+        assert len(store.list_entries()) == 2
+
+    def test_import_json(self, store, tmp_path):
+        json_file = tmp_path / "cap.json"
+        json_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "investor_name": "Alice",
+                        "wallet_address": "0x742d35Cc6634C0532925a3b8D2A7E1234567890A",
+                        "shares": 100,
+                    },
+                ]
+            )
+        )
+        rows = import_cap_table_file(str(json_file))
+        assert len(rows) == 1
+        assert rows[0]["shares"] == 100
+
+    def test_reconcile_marks_synced(self, store, on_chain):
+        addr = "0x742d35Cc6634C0532925a3b8D2A7E1234567890A"
+        entry = CapTableEntry(investor_name="Alice", wallet_address=addr, shares=1000.0)
+        store.upsert_entry(entry)
+        on_chain.balances[addr.lower()] = shares_to_wei(1000.0)
+
+        result = reconcile_cap_table(store, on_chain, shares_to_wei)
+        assert result["synced"] == 1
+        assert result["pending"] == 0
+
+    def test_reconcile_marks_pending(self, store, on_chain):
+        addr = "0x742d35Cc6634C0532925a3b8D2A7E1234567890A"
+        entry = CapTableEntry(investor_name="Alice", wallet_address=addr, shares=1000.0)
+        store.upsert_entry(entry)
+
+        result = reconcile_cap_table(store, on_chain, shares_to_wei)
+        assert result["pending"] == 1
+
+
+class TestDeploy:
+    def test_deploy_without_forge(self):
+        with patch("agno.tools.startup_stock.deploy.shutil.which", return_value=None):
+            result = deploy_startup_stock_token("Test", "TST", 1000, "http://localhost", "0xkey")
+            assert "error" in result
+            assert "forge not found" in result["error"]
+
+
+class TestStartupStockReader:
+    @pytest.fixture
+    def mock_contract_client(self):
+        client = Mock()
+        client.contract_address = "0x3Dfc53E3C77bb4e30Ce333Be1a66Ce62558bE395"
+        client.get_token_info_dict.return_value = {
+            "contract_address": "0x3Dfc53E3C77bb4e30Ce333Be1a66Ce62558bE395",
+            "name": "Acme",
+            "symbol": "ACME",
+            "decimals": 18,
+            "total_supply_shares": 1000.0,
+            "max_supply_shares": 1000000.0,
+            "paused": False,
+            "owner": "0x742d35Cc6634C0532925a3b8D2A7E1234567890A",
+            "wallet": None,
+        }
+        client.get_balance_wei.return_value = shares_to_wei(500.0)
+        return client
+
+    def test_get_token_info(self, mock_contract_client):
+        reader = StartupStockReader.__new__(StartupStockReader)
+        reader.contract_client = mock_contract_client
+        result = json.loads(reader.get_token_info())
+        assert result["name"] == "Acme"
+        assert result["symbol"] == "ACME"
+
+    def test_get_investor_balance(self, mock_contract_client):
+        reader = StartupStockReader.__new__(StartupStockReader)
+        reader.contract_client = mock_contract_client
+        result = json.loads(reader.get_investor_balance("0x742d35Cc6634C0532925a3b8D2A7E1234567890A"))
+        assert result["shares"] == 500.0
+
+
 class TestStartupStockTools:
     @pytest.fixture
     def mock_web3_client(self):
@@ -212,13 +308,29 @@ class TestStartupStockTools:
         return contract
 
     def test_get_token_info(self, mock_web3_client, mock_contract, temp_db):
+        mock_client = Mock()
+        mock_client.contract = mock_contract
+        mock_client.contract_address = "0x3Dfc53E3C77bb4e30Ce333Be1a66Ce62558bE395"
+        mock_client.get_token_info_dict.return_value = {
+            "contract_address": "0x3Dfc53E3C77bb4e30Ce333Be1a66Ce62558bE395",
+            "name": "Acme Startup",
+            "symbol": "ACME",
+            "decimals": 18,
+            "total_supply_shares": 1000.0,
+            "max_supply_shares": 1000000.0,
+            "paused": False,
+            "owner": "0x742d35Cc6634C0532925a3b8D2A7E1234567890A",
+            "wallet": "0x742d35Cc6634C0532925a3b8D2A7E1234567890A",
+        }
+        mock_client.get_balance_wei.return_value = 10**20
+
         with (
             patch("agno.tools.startup_stock.toolkit.Web3") as mock_web3_class,
             patch("agno.tools.startup_stock.toolkit.HTTPProvider"),
+            patch("agno.tools.startup_stock.toolkit.StartupStockContract", return_value=mock_client),
         ):
             mock_web3_class.return_value = mock_web3_client
             mock_web3_class.to_checksum_address = Web3_to_checksum
-            mock_web3_client.eth.contract.return_value = mock_contract
 
             from agno.tools.startup_stock.toolkit import StartupStockTools
 
@@ -232,22 +344,22 @@ class TestStartupStockTools:
             assert result["name"] == "Acme Startup"
             assert result["symbol"] == "ACME"
 
-    def test_add_investor(self, mock_web3_client, mock_contract, temp_db):
+    def test_add_investor_without_contract(self, mock_web3_client, temp_db):
         with (
             patch("agno.tools.startup_stock.toolkit.Web3") as mock_web3_class,
             patch("agno.tools.startup_stock.toolkit.HTTPProvider"),
         ):
             mock_web3_class.return_value = mock_web3_client
             mock_web3_class.to_checksum_address = Web3_to_checksum
-            mock_web3_client.eth.contract.return_value = mock_contract
 
             from agno.tools.startup_stock.toolkit import StartupStockTools
 
             tools = StartupStockTools(
                 private_key="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
                 rpc_url="https://0xrpc.io/sep",
-                contract_address="0x3Dfc53E3C77bb4e30Ce333Be1a66Ce62558bE395",
                 cap_table_db=temp_db,
+                enable_read=False,
+                enable_sync=False,
             )
             result = json.loads(
                 tools.add_investor(
@@ -259,20 +371,28 @@ class TestStartupStockTools:
             assert result["investor_name"] == "Alice"
             assert result["shares"] == 1000.0
 
-    def test_init_requires_contract_address(self, mock_web3_client):
+    def test_import_cap_table(self, mock_web3_client, temp_db, tmp_path):
+        csv_file = tmp_path / "cap.csv"
+        csv_file.write_text(
+            "investor_name,wallet_address,shares\nAlice,0x742d35Cc6634C0532925a3b8D2A7E1234567890A,1000\n"
+        )
         with (
             patch("agno.tools.startup_stock.toolkit.Web3") as mock_web3_class,
             patch("agno.tools.startup_stock.toolkit.HTTPProvider"),
-            patch.dict("os.environ", {}, clear=True),
         ):
             mock_web3_class.return_value = mock_web3_client
+
             from agno.tools.startup_stock.toolkit import StartupStockTools
 
-            with pytest.raises(ValueError, match="Contract address is required"):
-                StartupStockTools(
-                    private_key="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-                    rpc_url="https://0xrpc.io/sep",
-                )
+            tools = StartupStockTools(
+                private_key="0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                rpc_url="https://0xrpc.io/sep",
+                cap_table_db=temp_db,
+                enable_read=False,
+                enable_sync=False,
+            )
+            result = json.loads(tools.import_cap_table(str(csv_file)))
+            assert result["imported"] == 1
 
 
 def Web3_to_checksum(address: str) -> str:

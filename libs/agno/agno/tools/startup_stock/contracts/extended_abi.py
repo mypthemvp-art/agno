@@ -1,0 +1,206 @@
+"""ABIs for VestingVault and StartupStockMultiSig."""
+
+VESTING_VAULT_ABI = [
+    {
+        "inputs": [{"internalType": "address", "name": "_token", "type": "address"}],
+        "stateMutability": "nonpayable",
+        "type": "constructor",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "internalType": "address", "name": "beneficiary", "type": "address"},
+            {"indexed": False, "internalType": "uint256", "name": "amount", "type": "uint256"},
+        ],
+        "name": "Released",
+        "type": "event",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "internalType": "address", "name": "beneficiary", "type": "address"},
+            {"indexed": False, "internalType": "uint256", "name": "totalAmount", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "startTime", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "cliffDuration", "type": "uint256"},
+            {"indexed": False, "internalType": "uint256", "name": "vestingDuration", "type": "uint256"},
+        ],
+        "name": "ScheduleCreated",
+        "type": "event",
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "beneficiary", "type": "address"},
+            {"internalType": "uint256", "name": "totalAmount", "type": "uint256"},
+            {"internalType": "uint256", "name": "startTime", "type": "uint256"},
+            {"internalType": "uint256", "name": "cliffDuration", "type": "uint256"},
+            {"internalType": "uint256", "name": "vestingDuration", "type": "uint256"},
+        ],
+        "name": "createSchedule",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "name": "schedules",
+        "outputs": [
+            {"internalType": "uint256", "name": "totalAmount", "type": "uint256"},
+            {"internalType": "uint256", "name": "released", "type": "uint256"},
+            {"internalType": "uint256", "name": "startTime", "type": "uint256"},
+            {"internalType": "uint256", "name": "cliffDuration", "type": "uint256"},
+            {"internalType": "uint256", "name": "vestingDuration", "type": "uint256"},
+            {"internalType": "bool", "name": "revoked", "type": "bool"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "address", "name": "beneficiary", "type": "address"}],
+        "name": "releasable",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "address", "name": "beneficiary", "type": "address"}],
+        "name": "vestedAmount",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "address", "name": "beneficiary", "type": "address"}],
+        "name": "release",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "address", "name": "beneficiary", "type": "address"}],
+        "name": "revoke",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "token",
+        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "owner",
+        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+MULTISIG_ABI = [
+    {
+        "inputs": [
+            {"internalType": "address[]", "name": "_owners", "type": "address[]"},
+            {"internalType": "uint256", "name": "_required", "type": "uint256"},
+        ],
+        "stateMutability": "nonpayable",
+        "type": "constructor",
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True, "internalType": "address", "name": "owner", "type": "address"},
+            {"indexed": True, "internalType": "uint256", "name": "txId", "type": "uint256"},
+        ],
+        "name": "Confirmation",
+        "type": "event",
+    },
+    {
+        "anonymous": False,
+        "inputs": [{"indexed": True, "internalType": "uint256", "name": "txId", "type": "uint256"}],
+        "name": "Submission",
+        "type": "event",
+    },
+    {
+        "anonymous": False,
+        "inputs": [{"indexed": True, "internalType": "uint256", "name": "txId", "type": "uint256"}],
+        "name": "Execution",
+        "type": "event",
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "target", "type": "address"},
+            {"internalType": "uint256", "name": "value", "type": "uint256"},
+            {"internalType": "bytes", "name": "data", "type": "bytes"},
+        ],
+        "name": "submitTransaction",
+        "outputs": [{"internalType": "uint256", "name": "txId", "type": "uint256"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "txId", "type": "uint256"}],
+        "name": "confirmTransaction",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "txId", "type": "uint256"}],
+        "name": "executeTransaction",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "txId", "type": "uint256"}],
+        "name": "getConfirmationCount",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "getOwners",
+        "outputs": [{"internalType": "address[]", "name": "", "type": "address[]"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"internalType": "uint256", "name": "txId", "type": "uint256"},
+            {"internalType": "address", "name": "ownerAddr", "type": "address"},
+        ],
+        "name": "isConfirmed",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "required",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "transactionCount",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "name": "transactions",
+        "outputs": [
+            {"internalType": "address", "name": "target", "type": "address"},
+            {"internalType": "uint256", "name": "value", "type": "uint256"},
+            {"internalType": "bytes", "name": "data", "type": "bytes"},
+            {"internalType": "bool", "name": "executed", "type": "bool"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
