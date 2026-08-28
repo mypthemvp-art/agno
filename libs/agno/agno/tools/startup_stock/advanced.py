@@ -8,8 +8,21 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, Callable, List, Optional
 
+from agno.tools.startup_stock.deploy import deploy_multisig, deploy_vesting_vault
 from agno.tools.startup_stock.multisig import MultiSigManager
-from agno.tools.startup_stock.toolkit import StartupStockTools, _to_json
+from agno.tools.startup_stock.reports import (
+    DilutionScenario,
+)
+from agno.tools.startup_stock.reports import (
+    calculate_dilution as calc_dilution,
+)
+from agno.tools.startup_stock.reports import (
+    export_compliance_report as export_report,
+)
+from agno.tools.startup_stock.reports import (
+    generate_equity_report as build_equity_report,
+)
+from agno.tools.startup_stock.toolkit import StartupStockTools, _to_json, shares_to_wei, wei_to_shares
 from agno.tools.startup_stock.vesting import (
     VestingManager,
     VestingSchedule,
@@ -17,6 +30,7 @@ from agno.tools.startup_stock.vesting import (
     compute_releasable_shares,
     compute_vested_shares,
 )
+from agno.tools.startup_stock.webhook_daemon import TransferWebhookDaemon
 from agno.tools.startup_stock.webhooks import TransferWebhookWatcher, WebhookDeliveryStore
 
 
@@ -31,12 +45,16 @@ class StartupStockAdvancedTools(StartupStockTools):
         enable_vesting: bool = True,
         enable_multisig: bool = True,
         enable_webhooks: bool = True,
+        enable_reports: bool = True,
+        enable_deploy_extended: bool = True,
         all_advanced: bool = False,
         **kwargs,
     ):
         self._enable_vesting = all_advanced or enable_vesting
         self._enable_multisig = all_advanced or enable_multisig
         self._enable_webhooks = all_advanced or enable_webhooks
+        self._enable_reports = all_advanced or enable_reports
+        self._enable_deploy_extended = all_advanced or enable_deploy_extended
 
         super().__init__(**kwargs)
 
@@ -100,8 +118,48 @@ class StartupStockAdvancedTools(StartupStockTools):
             )
 
         if self._enable_webhooks:
-            extra_tools.append(self.poll_transfer_webhooks)
-            extra_async.append((self.apoll_transfer_webhooks, "poll_transfer_webhooks"))
+            extra_tools.extend(
+                [
+                    self.poll_transfer_webhooks,
+                    self.run_webhook_daemon_once,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.apoll_transfer_webhooks, "poll_transfer_webhooks"),
+                    (self.arun_webhook_daemon_once, "run_webhook_daemon_once"),
+                ]
+            )
+
+        if self._enable_reports:
+            extra_tools.extend(
+                [
+                    self.generate_equity_report,
+                    self.calculate_dilution,
+                    self.export_compliance_report,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.agenerate_equity_report, "generate_equity_report"),
+                    (self.acalculate_dilution, "calculate_dilution"),
+                    (self.aexport_compliance_report, "export_compliance_report"),
+                ]
+            )
+
+        if self._enable_deploy_extended:
+            extra_tools.extend(
+                [
+                    self.deploy_vesting_vault,
+                    self.deploy_multisig,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.adeploy_vesting_vault, "deploy_vesting_vault"),
+                    (self.adeploy_multisig, "deploy_multisig"),
+                ]
+            )
 
         for tool in extra_tools:
             self.register(tool)
@@ -256,14 +314,135 @@ class StartupStockAdvancedTools(StartupStockTools):
         try:
             if not self.webhook_url:
                 return _to_json({"error": "Webhook URL not configured (STARTUP_STOCK_WEBHOOK_URL)"})
-            contract = self._require_contract().contract
-            watcher = TransferWebhookWatcher(
-                contract=contract,
-                web3_client=self.web3_client,
-                webhook_url=self.webhook_url,
-                store=self.webhook_store,
-            )
+            watcher = self._build_webhook_watcher()
             return _to_json(watcher.poll_and_deliver(lookback_blocks=lookback_blocks))
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def run_webhook_daemon_once(self, lookback_blocks: int = 50) -> str:
+        """Run a single webhook daemon poll cycle."""
+        try:
+            if not self.webhook_url:
+                return _to_json({"error": "Webhook URL not configured (STARTUP_STOCK_WEBHOOK_URL)"})
+            daemon = TransferWebhookDaemon(
+                watcher=self._build_webhook_watcher(),
+                lookback_blocks=lookback_blocks,
+            )
+            return _to_json(daemon.run_once())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def _build_webhook_watcher(self) -> TransferWebhookWatcher:
+        if not self.webhook_url:
+            raise ValueError("Webhook URL not configured (STARTUP_STOCK_WEBHOOK_URL)")
+        contract = self._require_contract().contract
+        return TransferWebhookWatcher(
+            contract=contract,
+            web3_client=self.web3_client,
+            webhook_url=self.webhook_url,
+            store=self.webhook_store,
+        )
+
+    # -------------------------------------------------------------------------
+    # Report tools
+    # -------------------------------------------------------------------------
+
+    def generate_equity_report(self) -> str:
+        """Generate a comprehensive equity report with on-chain verification."""
+        try:
+            on_chain_reader = self if self.contract_client else None
+            report = build_equity_report(
+                cap_table_store=self.store,
+                vesting_store=self.vesting_store if self._enable_vesting else None,
+                on_chain_reader=on_chain_reader,
+                shares_to_wei=shares_to_wei,
+                wei_to_shares=wei_to_shares,
+            )
+            return _to_json(report)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def calculate_dilution(
+        self,
+        scenario_name: str,
+        new_shares: float,
+        option_pool_increase: float = 0.0,
+    ) -> str:
+        """Calculate ownership dilution for a funding scenario."""
+        try:
+            entries = self.store.list_entries()
+            shareholders = [
+                {
+                    "investor_name": e.investor_name,
+                    "wallet_address": e.wallet_address,
+                    "shares": e.shares,
+                }
+                for e in entries
+            ]
+            scenarios = [
+                DilutionScenario(
+                    name=scenario_name,
+                    new_shares=new_shares,
+                    option_pool_increase=option_pool_increase,
+                )
+            ]
+            return _to_json(calc_dilution(shareholders, scenarios))
+        except Exception as e:
+            return _to_json({"error": str(e), "scenario_name": scenario_name})
+
+    def export_compliance_report(self, file_path: str, fmt: str = "json") -> str:
+        """Export equity report to JSON or CSV for compliance/audit."""
+        try:
+            report = build_equity_report(
+                cap_table_store=self.store,
+                vesting_store=self.vesting_store if self._enable_vesting else None,
+                on_chain_reader=self if self.contract_client else None,
+                shares_to_wei=shares_to_wei,
+                wei_to_shares=wei_to_shares,
+            )
+            result = export_report(report, file_path, fmt=fmt)
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e), "file_path": file_path})
+
+    # -------------------------------------------------------------------------
+    # Extended deploy tools
+    # -------------------------------------------------------------------------
+
+    def deploy_vesting_vault(self, token_address: Optional[str] = None) -> str:
+        """Deploy VestingVault for the startup stock token."""
+        try:
+            token = token_address or self.contract_address
+            if not token:
+                return _to_json({"error": "Token address required (contract_address or token_address)"})
+            assert self.rpc_url is not None and self.private_key is not None
+            result = deploy_vesting_vault(
+                token_address=token,
+                rpc_url=self.rpc_url,
+                private_key=self.private_key,
+            )
+            if "contract_address" in result:
+                self.vesting_vault_address = result["contract_address"]
+                self.vesting_manager.set_vault_address(result["contract_address"])
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def deploy_multisig(self, owners_csv: str, required: int) -> str:
+        """Deploy StartupStockMultiSig. owners_csv is comma-separated addresses."""
+        try:
+            owners = [o.strip() for o in owners_csv.split(",") if o.strip()]
+            assert self.rpc_url is not None and self.private_key is not None
+            result = deploy_multisig(
+                owners=owners,
+                required=required,
+                rpc_url=self.rpc_url,
+                private_key=self.private_key,
+            )
+            if "contract_address" in result:
+                self.multisig_address = result["contract_address"]
+                self.multisig_manager = MultiSigManager(self.web3_client, self.multisig_address)
+            return _to_json(result)
         except Exception as e:
             return _to_json({"error": str(e)})
 
@@ -304,3 +483,26 @@ class StartupStockAdvancedTools(StartupStockTools):
 
     async def apoll_transfer_webhooks(self, lookback_blocks: int = 100) -> str:
         return self.poll_transfer_webhooks(lookback_blocks=lookback_blocks)
+
+    async def arun_webhook_daemon_once(self, lookback_blocks: int = 50) -> str:
+        return self.run_webhook_daemon_once(lookback_blocks=lookback_blocks)
+
+    async def agenerate_equity_report(self) -> str:
+        return self.generate_equity_report()
+
+    async def acalculate_dilution(
+        self,
+        scenario_name: str,
+        new_shares: float,
+        option_pool_increase: float = 0.0,
+    ) -> str:
+        return self.calculate_dilution(scenario_name, new_shares, option_pool_increase)
+
+    async def aexport_compliance_report(self, file_path: str, fmt: str = "json") -> str:
+        return self.export_compliance_report(file_path, fmt=fmt)
+
+    async def adeploy_vesting_vault(self, token_address: Optional[str] = None) -> str:
+        return self.deploy_vesting_vault(token_address=token_address)
+
+    async def adeploy_multisig(self, owners_csv: str, required: int) -> str:
+        return self.deploy_multisig(owners_csv, required)
