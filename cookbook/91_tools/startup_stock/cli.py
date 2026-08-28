@@ -6,10 +6,13 @@ High-security, fast-sync CLI for startup equity tokenization.
 Usage:
     python cli.py info
     python cli.py add --name Alice --wallet 0x742d... --shares 10000
+    python cli.py import --file sample_cap_table.csv
     python cli.py list
     python cli.py balance --wallet 0x742d...
+    python cli.py reconcile
     python cli.py sync --dry-run
-    python cli.py sync
+    python cli.py sync --live
+    python cli.py deploy --name "Acme Startup" --symbol ACME --max-shares 1000000
 """
 
 import argparse
@@ -18,10 +21,10 @@ import os
 import sys
 
 
-def _load_tools():
+def _load_tools(require_contract: bool = True):
     from agno.tools.startup_stock import StartupStockTools
 
-    if not os.getenv("STARTUP_STOCK_CONTRACT_ADDRESS"):
+    if require_contract and not os.getenv("STARTUP_STOCK_CONTRACT_ADDRESS"):
         print(
             "Error: Set STARTUP_STOCK_CONTRACT_ADDRESS environment variable.",
             file=sys.stderr,
@@ -32,13 +35,26 @@ def _load_tools():
     return StartupStockTools()
 
 
+def _load_reader():
+    from agno.tools.startup_stock import StartupStockReader
+
+    if not os.getenv("STARTUP_STOCK_CONTRACT_ADDRESS") or not os.getenv("EVM_RPC_URL"):
+        print(
+            "Error: Set STARTUP_STOCK_CONTRACT_ADDRESS and EVM_RPC_URL.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return StartupStockReader()
+
+
 def cmd_info(args: argparse.Namespace) -> None:
     tools = _load_tools()
     print(json.dumps(json.loads(tools.get_token_info()), indent=2))
 
 
 def cmd_add(args: argparse.Namespace) -> None:
-    tools = _load_tools()
+    tools = _load_tools(require_contract=False)
     result = json.loads(tools.add_investor(args.name, args.wallet, args.shares))
     if "error" in result:
         print(f"Error: {result['error']}", file=sys.stderr)
@@ -49,7 +65,7 @@ def cmd_add(args: argparse.Namespace) -> None:
 
 
 def cmd_list(args: argparse.Namespace) -> None:
-    tools = _load_tools()
+    tools = _load_tools(require_contract=False)
     cap_table = json.loads(tools.list_cap_table())
     entries = cap_table.get("entries", [])
     if not entries:
@@ -67,13 +83,48 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def cmd_balance(args: argparse.Namespace) -> None:
-    tools = _load_tools()
-    result = json.loads(tools.get_investor_balance(args.wallet))
+    if args.readonly:
+        reader = _load_reader()
+        result = json.loads(reader.get_investor_balance(args.wallet))
+    else:
+        tools = _load_tools()
+        result = json.loads(tools.get_investor_balance(args.wallet))
     if "error" in result:
         print(f"Error: {result['error']}", file=sys.stderr)
         sys.exit(1)
     print(f"Wallet: {result['wallet_address']}")
     print(f"Shares: {result['shares']:,.4f}")
+
+
+def cmd_import(args: argparse.Namespace) -> None:
+    tools = _load_tools(require_contract=False)
+    result = json.loads(tools.import_cap_table(args.file))
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Imported {result['imported']} investors from {result['file_path']}")
+
+
+def cmd_reconcile(args: argparse.Namespace) -> None:
+    tools = _load_tools()
+    result = json.loads(tools.reconcile_cap_table())
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Synced:  {result.get('synced', 0)}")
+    print(f"Pending: {result.get('pending', 0)}")
+    print(f"Drifted: {result.get('drifted', 0)}")
+    print(f"Failed:  {result.get('failed', 0)}")
+
+
+def cmd_deploy(args: argparse.Namespace) -> None:
+    tools = _load_tools(require_contract=False)
+    result = json.loads(tools.deploy_token(args.name, args.symbol, args.max_shares))
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Deployed to: {result['contract_address']}")
+    print(f"export STARTUP_STOCK_CONTRACT_ADDRESS={result['contract_address']}")
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
@@ -123,6 +174,27 @@ def main() -> None:
     balance_parser.add_argument(
         "--wallet", required=True, help="Wallet address (0x...)"
     )
+    balance_parser.add_argument(
+        "--readonly", action="store_true", help="Read-only mode (no private key needed)"
+    )
+
+    import_parser = subparsers.add_parser(
+        "import", help="Import cap table from CSV/JSON"
+    )
+    import_parser.add_argument("--file", required=True, help="Path to cap table file")
+
+    subparsers.add_parser(
+        "reconcile", help="Reconcile cap table with on-chain balances"
+    )
+
+    deploy_parser = subparsers.add_parser(
+        "deploy", help="Deploy StartupStockToken (requires forge)"
+    )
+    deploy_parser.add_argument("--name", required=True, help="Token name")
+    deploy_parser.add_argument("--symbol", required=True, help="Token symbol")
+    deploy_parser.add_argument(
+        "--max-shares", type=float, required=True, help="Max supply in shares"
+    )
 
     sync_parser = subparsers.add_parser("sync", help="Sync cap table to blockchain")
     sync_parser.add_argument(
@@ -138,6 +210,9 @@ def main() -> None:
         "add": cmd_add,
         "list": cmd_list,
         "balance": cmd_balance,
+        "import": cmd_import,
+        "reconcile": cmd_reconcile,
+        "deploy": cmd_deploy,
         "sync": cmd_sync,
     }
     commands[args.command](args)
