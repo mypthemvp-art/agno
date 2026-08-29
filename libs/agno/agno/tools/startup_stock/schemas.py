@@ -31,6 +31,31 @@ class VestingSummary(BaseModel):
     revoked: bool = False
 
 
+class OptionPoolSummary(BaseModel):
+    authorized_shares: float
+    granted_outstanding: float
+    available_shares: float
+    utilization_pct: float
+    grant_count: int = 0
+
+
+class Valuation409ASummary(BaseModel):
+    fair_market_value: float
+    firm: str
+    valuation_date: str
+    current: bool
+    share_class: str = "common"
+
+
+class InstrumentConversion(BaseModel):
+    investor_name: str
+    instrument_type: str
+    investment_amount: float
+    conversion_price: float
+    converted_shares: float
+    conversion_method: str
+
+
 class EquityIntelligenceReport(BaseModel):
     """Structured report for equity intelligence agents."""
 
@@ -43,6 +68,9 @@ class EquityIntelligenceReport(BaseModel):
     drift_count: int = 0
     vesting_schedules: List[VestingSummary] = Field(default_factory=list)
     dilution_scenarios: List[DilutionImpact] = Field(default_factory=list)
+    option_pool: Optional[OptionPoolSummary] = None
+    valuation_409a: Optional[Valuation409ASummary] = None
+    instrument_conversions: List[InstrumentConversion] = Field(default_factory=list)
     public_comparisons: List[str] = Field(
         default_factory=list,
         description="Public market comparisons from finance tools",

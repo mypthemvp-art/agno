@@ -24,6 +24,10 @@ Usage:
     python cli.py health
     python cli.py snapshot create --label "pre-series-a"
     python cli.py sync-daemon --iterations 3
+    python cli.py pool set --shares 100000
+    python cli.py pool grant --name Eve --shares 5000 --strike 0.50
+    python cli.py valuation record --fmv 0.50 --firm "Acme Valuation"
+    python cli.py safe add --name SeedFund --amount 250000 --cap 5000000 --discount 0.20
 """
 
 import argparse
@@ -369,6 +373,143 @@ def cmd_sync_daemon(args: argparse.Namespace) -> None:
     daemon.run(max_iterations=args.iterations)
 
 
+def cmd_pool_set(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.set_option_pool(args.shares))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_pool_get(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.get_option_pool())
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_pool_grant(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.grant_options(
+            recipient_name=args.name,
+            shares=args.shares,
+            strike_price=args.strike,
+            recipient_wallet=args.wallet,
+            cliff_days=args.cliff_days,
+            vesting_days=args.vesting_days,
+            notes=args.notes,
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_pool_list(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.list_option_grants(status=args.status))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_pool_exercise(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.exercise_options(args.grant_id, args.shares))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_valuation_record(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.record_409a_valuation(
+            fair_market_value=args.fmv,
+            firm=args.firm,
+            valuation_date=args.date,
+            methodology=args.methodology,
+            share_class=args.share_class,
+            validity_days=args.validity_days,
+            notes=args.notes,
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_valuation_latest(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.get_latest_409a(share_class=args.share_class))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_valuation_status(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.check_409a_status(share_class=args.share_class))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_safe_add(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.add_safe_instrument(
+            investor_name=args.name,
+            investment_amount=args.amount,
+            instrument_type=args.type,
+            valuation_cap=args.cap,
+            discount_rate=args.discount,
+            notes=args.notes,
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_safe_list(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.list_safe_instruments(status=args.status))
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_safe_preview(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.preview_safe_conversion(
+            instrument_id=args.instrument_id,
+            priced_round_price_per_share=args.price,
+            pre_money_shares=args.pre_money_shares,
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_safe_convert(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.convert_safe_instrument(
+            instrument_id=args.instrument_id,
+            priced_round_price_per_share=args.price,
+            pre_money_shares=args.pre_money_shares,
+        )
+    )
+    if "error" in result:
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Startup Stock CLI - tokenized equity cap table manager",
@@ -534,6 +675,78 @@ def main() -> None:
         "--live", action="store_true", help="Live sync (default dry-run)"
     )
 
+    pool_parser = subparsers.add_parser("pool", help="Option pool commands")
+    pool_sub = pool_parser.add_subparsers(dest="pool_command", required=True)
+
+    pool_set = pool_sub.add_parser("set", help="Set authorized option pool size")
+    pool_set.add_argument("--shares", type=float, required=True)
+
+    pool_sub.add_parser("get", help="Show option pool summary")
+
+    pool_grant = pool_sub.add_parser("grant", help="Grant options from the pool")
+    pool_grant.add_argument("--name", required=True)
+    pool_grant.add_argument("--shares", type=float, required=True)
+    pool_grant.add_argument("--strike", type=float, required=True)
+    pool_grant.add_argument("--wallet", default=None)
+    pool_grant.add_argument("--cliff-days", type=int, default=365)
+    pool_grant.add_argument("--vesting-days", type=int, default=1460)
+    pool_grant.add_argument("--notes", default=None)
+
+    pool_list = pool_sub.add_parser("list", help="List option grants")
+    pool_list.add_argument("--status", default=None)
+
+    pool_exercise = pool_sub.add_parser("exercise", help="Exercise vested options")
+    pool_exercise.add_argument("--grant-id", required=True)
+    pool_exercise.add_argument("--shares", type=float, required=True)
+
+    valuation_parser = subparsers.add_parser(
+        "valuation", help="409A valuation commands"
+    )
+    valuation_sub = valuation_parser.add_subparsers(
+        dest="valuation_command", required=True
+    )
+
+    valuation_record = valuation_sub.add_parser(
+        "record", help="Record a 409A valuation"
+    )
+    valuation_record.add_argument("--fmv", type=float, required=True)
+    valuation_record.add_argument("--firm", required=True)
+    valuation_record.add_argument("--date", default=None)
+    valuation_record.add_argument("--methodology", default="market_approach")
+    valuation_record.add_argument("--share-class", default="common")
+    valuation_record.add_argument("--validity-days", type=int, default=365)
+    valuation_record.add_argument("--notes", default=None)
+
+    valuation_latest = valuation_sub.add_parser("latest", help="Show latest 409A")
+    valuation_latest.add_argument("--share-class", default="common")
+
+    valuation_status = valuation_sub.add_parser("status", help="Check 409A validity")
+    valuation_status.add_argument("--share-class", default="common")
+
+    safe_parser = subparsers.add_parser("safe", help="SAFE/SAFT instrument commands")
+    safe_sub = safe_parser.add_subparsers(dest="safe_command", required=True)
+
+    safe_add = safe_sub.add_parser("add", help="Add a SAFE or SAFT")
+    safe_add.add_argument("--name", required=True)
+    safe_add.add_argument("--amount", type=float, required=True)
+    safe_add.add_argument("--type", default="safe", choices=["safe", "saft"])
+    safe_add.add_argument("--cap", type=float, default=None)
+    safe_add.add_argument("--discount", type=float, default=0.0)
+    safe_add.add_argument("--notes", default=None)
+
+    safe_list = safe_sub.add_parser("list", help="List SAFE/SAFT instruments")
+    safe_list.add_argument("--status", default=None)
+
+    safe_preview = safe_sub.add_parser("preview", help="Preview SAFE conversion")
+    safe_preview.add_argument("--instrument-id", required=True)
+    safe_preview.add_argument("--price", type=float, required=True)
+    safe_preview.add_argument("--pre-money-shares", type=float, default=None)
+
+    safe_convert = safe_sub.add_parser("convert", help="Convert a SAFE/SAFT")
+    safe_convert.add_argument("--instrument-id", required=True)
+    safe_convert.add_argument("--price", type=float, required=True)
+    safe_convert.add_argument("--pre-money-shares", type=float, default=None)
+
     args = parser.parse_args()
 
     if args.command == "vesting":
@@ -576,6 +789,36 @@ def main() -> None:
 
     if args.command == "sync-daemon":
         cmd_sync_daemon(args)
+        return
+
+    if args.command == "pool":
+        pool_commands = {
+            "set": cmd_pool_set,
+            "get": cmd_pool_get,
+            "grant": cmd_pool_grant,
+            "list": cmd_pool_list,
+            "exercise": cmd_pool_exercise,
+        }
+        pool_commands[args.pool_command](args)
+        return
+
+    if args.command == "valuation":
+        valuation_commands = {
+            "record": cmd_valuation_record,
+            "latest": cmd_valuation_latest,
+            "status": cmd_valuation_status,
+        }
+        valuation_commands[args.valuation_command](args)
+        return
+
+    if args.command == "safe":
+        safe_commands = {
+            "add": cmd_safe_add,
+            "list": cmd_safe_list,
+            "preview": cmd_safe_preview,
+            "convert": cmd_safe_convert,
+        }
+        safe_commands[args.safe_command](args)
         return
 
     commands = {
