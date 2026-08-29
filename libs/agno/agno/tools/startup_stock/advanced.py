@@ -12,7 +12,13 @@ from typing import Any, Callable, List, Optional
 from agno.tools.startup_stock.audit import AuditStore
 from agno.tools.startup_stock.deploy import deploy_multisig, deploy_vesting_vault
 from agno.tools.startup_stock.health import run_health_check
+from agno.tools.startup_stock.instruments import (
+    InstrumentStore,
+    convert_safe,
+    preview_instrument_conversion,
+)
 from agno.tools.startup_stock.multisig import MultiSigManager
+from agno.tools.startup_stock.option_pool import OptionPoolStore
 from agno.tools.startup_stock.reports import (
     DilutionScenario,
 )
@@ -28,6 +34,11 @@ from agno.tools.startup_stock.reports import (
 from agno.tools.startup_stock.snapshots import CapTableSnapshotStore
 from agno.tools.startup_stock.sync_daemon import CapTableSyncDaemon
 from agno.tools.startup_stock.toolkit import StartupStockTools, _to_json, shares_to_wei, wei_to_shares
+from agno.tools.startup_stock.valuation import (
+    Valuation409AStore,
+    compute_option_intrinsic_value,
+    suggest_strike_from_409a,
+)
 from agno.tools.startup_stock.vesting import (
     VestingManager,
     VestingSchedule,
@@ -55,6 +66,9 @@ class StartupStockAdvancedTools(StartupStockTools):
         enable_audit: bool = True,
         enable_health: bool = True,
         enable_snapshots: bool = True,
+        enable_option_pool: bool = True,
+        enable_valuation: bool = True,
+        enable_instruments: bool = True,
         all_advanced: bool = False,
         **kwargs,
     ):
@@ -66,6 +80,9 @@ class StartupStockAdvancedTools(StartupStockTools):
         self._enable_audit = all_advanced or enable_audit
         self._enable_health = all_advanced or enable_health
         self._enable_snapshots = all_advanced or enable_snapshots
+        self._enable_option_pool = all_advanced or enable_option_pool
+        self._enable_valuation = all_advanced or enable_valuation
+        self._enable_instruments = all_advanced or enable_instruments
 
         super().__init__(**kwargs)
 
@@ -77,10 +94,16 @@ class StartupStockAdvancedTools(StartupStockTools):
         webhook_db = str(Path(gettempdir()) / "startup_stock_webhooks.db")
         audit_db = str(Path(gettempdir()) / "startup_stock_audit.db")
         snapshot_db = str(Path(gettempdir()) / "startup_stock_snapshots.db")
+        option_pool_db = str(Path(gettempdir()) / "startup_stock_option_pool.db")
+        valuation_db = str(Path(gettempdir()) / "startup_stock_valuation.db")
+        instruments_db = str(Path(gettempdir()) / "startup_stock_instruments.db")
         self.vesting_store = VestingStore(vesting_db)
         self.webhook_store = WebhookDeliveryStore(webhook_db)
         self.audit_store = AuditStore(audit_db)
         self.snapshot_store = CapTableSnapshotStore(snapshot_db)
+        self.option_pool_store = OptionPoolStore(option_pool_db)
+        self.valuation_store = Valuation409AStore(valuation_db)
+        self.instrument_store = InstrumentStore(instruments_db)
 
         assert self.private_key is not None
         self.vesting_manager = VestingManager(
@@ -207,6 +230,68 @@ class StartupStockAdvancedTools(StartupStockTools):
                     (self.acreate_cap_table_snapshot, "create_cap_table_snapshot"),
                     (self.alist_cap_table_snapshots, "list_cap_table_snapshots"),
                     (self.acompare_cap_table_snapshots, "compare_cap_table_snapshots"),
+                ]
+            )
+
+        if self._enable_option_pool:
+            extra_tools.extend(
+                [
+                    self.set_option_pool,
+                    self.get_option_pool,
+                    self.grant_options,
+                    self.list_option_grants,
+                    self.exercise_options,
+                    self.cancel_option_grant,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.aset_option_pool, "set_option_pool"),
+                    (self.aget_option_pool, "get_option_pool"),
+                    (self.agrant_options, "grant_options"),
+                    (self.alist_option_grants, "list_option_grants"),
+                    (self.aexercise_options, "exercise_options"),
+                    (self.acancel_option_grant, "cancel_option_grant"),
+                ]
+            )
+
+        if self._enable_valuation:
+            extra_tools.extend(
+                [
+                    self.record_409a_valuation,
+                    self.get_latest_409a,
+                    self.check_409a_status,
+                    self.compute_option_value,
+                    self.suggest_option_strike,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.arecord_409a_valuation, "record_409a_valuation"),
+                    (self.aget_latest_409a, "get_latest_409a"),
+                    (self.acheck_409a_status, "check_409a_status"),
+                    (self.acompute_option_value, "compute_option_value"),
+                    (self.asuggest_option_strike, "suggest_option_strike"),
+                ]
+            )
+
+        if self._enable_instruments:
+            extra_tools.extend(
+                [
+                    self.add_safe_instrument,
+                    self.list_safe_instruments,
+                    self.preview_safe_conversion,
+                    self.convert_safe_instrument,
+                    self.get_instruments_summary,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.aadd_safe_instrument, "add_safe_instrument"),
+                    (self.alist_safe_instruments, "list_safe_instruments"),
+                    (self.apreview_safe_conversion, "preview_safe_conversion"),
+                    (self.aconvert_safe_instrument, "convert_safe_instrument"),
+                    (self.aget_instruments_summary, "get_instruments_summary"),
                 ]
             )
 
@@ -620,6 +705,291 @@ class StartupStockAdvancedTools(StartupStockTools):
             return _to_json({"error": str(e)})
 
     # -------------------------------------------------------------------------
+    # Option pool tools
+    # -------------------------------------------------------------------------
+
+    def set_option_pool(self, authorized_shares: float) -> str:
+        """Set the authorized employee option pool size."""
+        try:
+            result = self.option_pool_store.set_authorized_shares(authorized_shares)
+            self._log_audit("set_option_pool", detail={"authorized_shares": authorized_shares})
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def get_option_pool(self) -> str:
+        """Get option pool utilization summary."""
+        try:
+            return _to_json(self.option_pool_store.get_pool_summary())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def grant_options(
+        self,
+        recipient_name: str,
+        shares: float,
+        strike_price: float,
+        recipient_wallet: Optional[str] = None,
+        cliff_days: int = 365,
+        vesting_days: int = 1460,
+        notes: Optional[str] = None,
+    ) -> str:
+        """Grant options from the authorized pool."""
+        try:
+            result = self.option_pool_store.grant_options(
+                recipient_name=recipient_name,
+                shares=shares,
+                strike_price=strike_price,
+                recipient_wallet=recipient_wallet,
+                cliff_days=cliff_days,
+                vesting_days=vesting_days,
+                notes=notes,
+            )
+            if "error" not in result:
+                self._log_audit(
+                    "grant_options",
+                    target=recipient_wallet,
+                    detail={"recipient_name": recipient_name, "shares": shares, "strike_price": strike_price},
+                )
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def list_option_grants(self, status: Optional[str] = None) -> str:
+        """List option grants, optionally filtered by status."""
+        try:
+            grants = [g.to_dict() for g in self.option_pool_store.list_grants(status=status)]
+            return _to_json({"grants": grants, "count": len(grants), "pool": self.option_pool_store.get_pool_summary()})
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def exercise_options(self, grant_id: str, shares: float) -> str:
+        """Exercise vested options from a grant."""
+        try:
+            # Ensure vested shares cover the exercise for simple flows
+            grant = self.option_pool_store.get_grant(grant_id)
+            if grant and grant.vested_shares < shares:
+                self.option_pool_store.update_vested_shares(grant_id, max(grant.vested_shares, shares))
+            result = self.option_pool_store.exercise_options(grant_id, shares)
+            if "error" not in result:
+                self._log_audit("exercise_options", target=grant_id, detail={"shares": shares})
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def cancel_option_grant(self, grant_id: str) -> str:
+        """Cancel an outstanding option grant and return shares to the pool."""
+        try:
+            result = self.option_pool_store.cancel_grant(grant_id)
+            if "error" not in result:
+                self._log_audit("cancel_option_grant", target=grant_id)
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    # -------------------------------------------------------------------------
+    # 409A valuation tools
+    # -------------------------------------------------------------------------
+
+    def record_409a_valuation(
+        self,
+        fair_market_value: float,
+        firm: str,
+        valuation_date: Optional[str] = None,
+        methodology: str = "market_approach",
+        share_class: str = "common",
+        validity_days: int = 365,
+        notes: Optional[str] = None,
+    ) -> str:
+        """Record a 409A fair market value valuation."""
+        try:
+            result = self.valuation_store.record_valuation(
+                fair_market_value=fair_market_value,
+                firm=firm,
+                valuation_date=valuation_date,
+                methodology=methodology,
+                share_class=share_class,
+                validity_days=validity_days,
+                notes=notes,
+            )
+            if "error" not in result:
+                self._log_audit("record_409a", detail=result)
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def get_latest_409a(self, share_class: str = "common") -> str:
+        """Get the latest 409A valuation for a share class."""
+        try:
+            latest = self.valuation_store.get_latest(share_class=share_class)
+            if not latest:
+                return _to_json({"error": "No 409A valuation on file", "share_class": share_class})
+            return _to_json(latest.to_dict())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def check_409a_status(self, share_class: str = "common") -> str:
+        """Check whether the current 409A valuation is still valid."""
+        try:
+            return _to_json(self.valuation_store.is_current(share_class=share_class))
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def compute_option_value(
+        self, strike_price: float, shares: float, fair_market_value: Optional[float] = None
+    ) -> str:
+        """Compute intrinsic option value using an explicit or latest 409A FMV."""
+        try:
+            fmv = fair_market_value
+            if fmv is None:
+                latest = self.valuation_store.get_latest()
+                if not latest:
+                    return _to_json({"error": "No 409A valuation on file; pass fair_market_value"})
+                fmv = latest.fair_market_value
+            return _to_json(compute_option_intrinsic_value(fmv, strike_price, shares))
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def suggest_option_strike(self, discount_pct: float = 0.0, fair_market_value: Optional[float] = None) -> str:
+        """Suggest an option strike price from the latest (or provided) 409A FMV."""
+        try:
+            fmv = fair_market_value
+            if fmv is None:
+                latest = self.valuation_store.get_latest()
+                if not latest:
+                    return _to_json({"error": "No 409A valuation on file; pass fair_market_value"})
+                fmv = latest.fair_market_value
+            return _to_json(suggest_strike_from_409a(fmv, discount_pct=discount_pct))
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    # -------------------------------------------------------------------------
+    # SAFE / SAFT instrument tools
+    # -------------------------------------------------------------------------
+
+    def add_safe_instrument(
+        self,
+        investor_name: str,
+        investment_amount: float,
+        instrument_type: str = "safe",
+        valuation_cap: Optional[float] = None,
+        discount_rate: float = 0.0,
+        notes: Optional[str] = None,
+    ) -> str:
+        """Add a SAFE or SAFT instrument to the ledger."""
+        try:
+            result = self.instrument_store.add_instrument(
+                investor_name=investor_name,
+                instrument_type=instrument_type,
+                investment_amount=investment_amount,
+                valuation_cap=valuation_cap,
+                discount_rate=discount_rate,
+                notes=notes,
+            )
+            if "error" not in result:
+                self._log_audit("add_instrument", detail=result)
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def list_safe_instruments(self, status: Optional[str] = None) -> str:
+        """List SAFE/SAFT instruments."""
+        try:
+            instruments = [i.to_dict() for i in self.instrument_store.list_instruments(status=status)]
+            return _to_json(
+                {
+                    "instruments": instruments,
+                    "count": len(instruments),
+                    "summary": self.instrument_store.summary(),
+                }
+            )
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def preview_safe_conversion(
+        self,
+        instrument_id: str,
+        priced_round_price_per_share: float,
+        pre_money_shares: Optional[float] = None,
+    ) -> str:
+        """Preview SAFE/SAFT conversion at a priced round."""
+        try:
+            instrument = self.instrument_store.get_instrument(instrument_id)
+            if not instrument:
+                return _to_json({"error": "Instrument not found", "instrument_id": instrument_id})
+            shares = pre_money_shares
+            if shares is None:
+                shares = sum(e.shares for e in self.store.list_entries())
+            if shares <= 0:
+                return _to_json({"error": "pre_money_shares required when cap table is empty"})
+            return _to_json(
+                preview_instrument_conversion(
+                    instrument,
+                    priced_round_price_per_share=priced_round_price_per_share,
+                    pre_money_shares=shares,
+                )
+            )
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def convert_safe_instrument(
+        self,
+        instrument_id: str,
+        priced_round_price_per_share: float,
+        pre_money_shares: Optional[float] = None,
+    ) -> str:
+        """Convert an outstanding SAFE/SAFT and mark it converted in the ledger."""
+        try:
+            preview = json.loads(
+                self.preview_safe_conversion(
+                    instrument_id=instrument_id,
+                    priced_round_price_per_share=priced_round_price_per_share,
+                    pre_money_shares=pre_money_shares,
+                )
+            )
+            if "error" in preview:
+                return _to_json(preview)
+            result = self.instrument_store.mark_converted(
+                instrument_id=instrument_id,
+                converted_shares=preview["converted_shares"],
+                conversion_price=preview["conversion_price"],
+            )
+            if "error" not in result:
+                self._log_audit("convert_instrument", target=instrument_id, detail=preview)
+            return _to_json({"instrument": result, "conversion": preview})
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def get_instruments_summary(self) -> str:
+        """Summarize outstanding SAFE/SAFT instruments."""
+        try:
+            return _to_json(self.instrument_store.summary())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def model_safe_conversion(
+        self,
+        investment_amount: float,
+        priced_round_price_per_share: float,
+        pre_money_shares: float,
+        valuation_cap: Optional[float] = None,
+        discount_rate: float = 0.0,
+    ) -> str:
+        """Model a SAFE conversion without persisting an instrument."""
+        try:
+            return _to_json(
+                convert_safe(
+                    investment_amount=investment_amount,
+                    priced_round_price_per_share=priced_round_price_per_share,
+                    pre_money_shares=pre_money_shares,
+                    valuation_cap=valuation_cap,
+                    discount_rate=discount_rate,
+                )
+            )
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    # -------------------------------------------------------------------------
     # Async variants
     # -------------------------------------------------------------------------
 
@@ -700,3 +1070,95 @@ class StartupStockAdvancedTools(StartupStockTools):
 
     async def acompare_cap_table_snapshots(self, snapshot_id_a: str, snapshot_id_b: str) -> str:
         return self.compare_cap_table_snapshots(snapshot_id_a, snapshot_id_b)
+
+    async def aset_option_pool(self, authorized_shares: float) -> str:
+        return self.set_option_pool(authorized_shares)
+
+    async def aget_option_pool(self) -> str:
+        return self.get_option_pool()
+
+    async def agrant_options(
+        self,
+        recipient_name: str,
+        shares: float,
+        strike_price: float,
+        recipient_wallet: Optional[str] = None,
+        cliff_days: int = 365,
+        vesting_days: int = 1460,
+        notes: Optional[str] = None,
+    ) -> str:
+        return self.grant_options(
+            recipient_name, shares, strike_price, recipient_wallet, cliff_days, vesting_days, notes
+        )
+
+    async def alist_option_grants(self, status: Optional[str] = None) -> str:
+        return self.list_option_grants(status=status)
+
+    async def aexercise_options(self, grant_id: str, shares: float) -> str:
+        return self.exercise_options(grant_id, shares)
+
+    async def acancel_option_grant(self, grant_id: str) -> str:
+        return self.cancel_option_grant(grant_id)
+
+    async def arecord_409a_valuation(
+        self,
+        fair_market_value: float,
+        firm: str,
+        valuation_date: Optional[str] = None,
+        methodology: str = "market_approach",
+        share_class: str = "common",
+        validity_days: int = 365,
+        notes: Optional[str] = None,
+    ) -> str:
+        return self.record_409a_valuation(
+            fair_market_value, firm, valuation_date, methodology, share_class, validity_days, notes
+        )
+
+    async def aget_latest_409a(self, share_class: str = "common") -> str:
+        return self.get_latest_409a(share_class=share_class)
+
+    async def acheck_409a_status(self, share_class: str = "common") -> str:
+        return self.check_409a_status(share_class=share_class)
+
+    async def acompute_option_value(
+        self, strike_price: float, shares: float, fair_market_value: Optional[float] = None
+    ) -> str:
+        return self.compute_option_value(strike_price, shares, fair_market_value)
+
+    async def asuggest_option_strike(self, discount_pct: float = 0.0, fair_market_value: Optional[float] = None) -> str:
+        return self.suggest_option_strike(discount_pct=discount_pct, fair_market_value=fair_market_value)
+
+    async def aadd_safe_instrument(
+        self,
+        investor_name: str,
+        investment_amount: float,
+        instrument_type: str = "safe",
+        valuation_cap: Optional[float] = None,
+        discount_rate: float = 0.0,
+        notes: Optional[str] = None,
+    ) -> str:
+        return self.add_safe_instrument(
+            investor_name, investment_amount, instrument_type, valuation_cap, discount_rate, notes
+        )
+
+    async def alist_safe_instruments(self, status: Optional[str] = None) -> str:
+        return self.list_safe_instruments(status=status)
+
+    async def apreview_safe_conversion(
+        self,
+        instrument_id: str,
+        priced_round_price_per_share: float,
+        pre_money_shares: Optional[float] = None,
+    ) -> str:
+        return self.preview_safe_conversion(instrument_id, priced_round_price_per_share, pre_money_shares)
+
+    async def aconvert_safe_instrument(
+        self,
+        instrument_id: str,
+        priced_round_price_per_share: float,
+        pre_money_shares: Optional[float] = None,
+    ) -> str:
+        return self.convert_safe_instrument(instrument_id, priced_round_price_per_share, pre_money_shares)
+
+    async def aget_instruments_summary(self) -> str:
+        return self.get_instruments_summary()

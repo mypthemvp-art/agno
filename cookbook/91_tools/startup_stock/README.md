@@ -32,6 +32,9 @@ Works on macOS, Linux, and Windows via Python.
 - **Sync Daemon** — Scheduled background cap table sync (dry-run or live)
 - **Equity Team** — Multi-agent team for cap table, compliance, and IR
 - **Equity Workflow** — Programmatic import-to-export pipeline
+- **Option Pool** — Authorized pool, grants, exercise, and utilization tracking
+- **409A Valuation** — Fair market value records, validity checks, strike suggestions
+- **SAFE/SAFT Instruments** — Track convertible instruments and model conversion
 - **AI Agent** — Natural-language cap table management with structured output
 
 ## Prerequisites
@@ -107,6 +110,10 @@ print(tools.sync_cap_table(dry_run=False))
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py snapshot create --label "pre-series-a"
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py snapshot list
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py sync-daemon --iterations 3
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py pool set --shares 100000
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py pool grant --name Eve --shares 5000 --strike 0.50
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py valuation record --fmv 0.50 --firm "Acme Valuation"
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py safe add --name SeedFund --amount 250000 --cap 5000000 --discount 0.20
 ```
 
 ## Examples
@@ -128,6 +135,8 @@ print(tools.sync_cap_table(dry_run=False))
 | `13_equity_team.py` | Multi-agent team for cap table, compliance, and IR |
 | `14_equity_workflow.py` | Programmatic import-to-export workflow |
 | `15_sync_daemon.py` | Continuous cap table sync daemon |
+| `16_option_pool_409a_safe.py` | Option pool, 409A valuation, and SAFE conversion |
+| `17_equity_instruments_agent.py` | AI advisor for pool, 409A, and SAFE instruments |
 | `menubar.py` | macOS menu bar app (requires `pip install rumps`) |
 | `cli.py` | macOS/Linux CLI for cap table operations |
 | `sample_cap_table.csv` | Sample CSV cap table for import |

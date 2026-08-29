@@ -79,3 +79,29 @@
 **Description:** Continuous cap table sync daemon.
 
 ---
+
+### 16_option_pool_409a_safe.py
+
+**Status:** PENDING
+
+**Description:** Option pool grants, 409A valuation, and SAFE conversion modeling.
+
+---
+
+### 17_equity_instruments_agent.py
+
+**Status:** PENDING
+
+**Description:** AI advisor for option pool, 409A, and SAFE/SAFT instruments.
+
+---
+
+### test_startup_stock_phase7.py
+
+**Status:** PASS
+
+**Description:** Unit tests for option pool grants/exercise, 409A valuation helpers, and SAFE conversion math.
+
+**Result:** 7 tests passed as part of 57 total startup stock unit tests.
+
+---
