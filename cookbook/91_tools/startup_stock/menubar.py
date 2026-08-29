@@ -46,12 +46,15 @@ class StartupStockMenuBarApp(rumps.App):
         super().__init__("Startup Stock", quit_button="Quit")
         self.token_item = rumps.MenuItem("Token: loading...")
         self.cap_table_item = rumps.MenuItem("Cap table: --")
+        self.health_item = rumps.MenuItem("Health: --")
         self.menu = [
             self.token_item,
             self.cap_table_item,
+            self.health_item,
             None,
             rumps.MenuItem("Refresh", callback=self.refresh),
             rumps.MenuItem("Sync Preview", callback=self.sync_preview),
+            rumps.MenuItem("Create Snapshot", callback=self.create_snapshot),
         ]
         self.refresh(None)
 
@@ -61,10 +64,11 @@ class StartupStockMenuBarApp(rumps.App):
         return StartupStockReader()
 
     def _get_tools(self):
-        from agno.tools.startup_stock import StartupStockTools
+        from agno.tools.startup_stock import StartupStockAdvancedTools
 
-        return StartupStockTools(
-            enable_read=False, enable_write=False, enable_sync=True
+        return StartupStockAdvancedTools(
+            enable_webhooks=False,
+            enable_deploy_extended=False,
         )
 
     def _run_async(self, fn, callback) -> None:
@@ -110,12 +114,25 @@ class StartupStockMenuBarApp(rumps.App):
 
             rumps.call_on_main_thread(update)
 
+        def on_health(result: str) -> None:
+            data = json.loads(result)
+
+            def update() -> None:
+                if "error" in data:
+                    self.health_item.title = "Health: error"
+                else:
+                    status = "OK" if data.get("healthy") else "WARN"
+                    self.health_item.title = f"Health: {status}"
+
+            rumps.call_on_main_thread(update)
+
         reader = self._get_reader()
         self._run_async(reader.get_token_info, on_token)
 
         if os.getenv("EVM_PRIVATE_KEY"):
             tools = self._get_tools()
             self._run_async(tools.list_cap_table, on_cap_table)
+            self._run_async(tools.run_health_check, on_health)
 
     def sync_preview(self, _) -> None:
         if not os.getenv("EVM_PRIVATE_KEY"):
@@ -141,6 +158,32 @@ class StartupStockMenuBarApp(rumps.App):
 
         tools = self._get_tools()
         self._run_async(lambda: tools.sync_cap_table(dry_run=True), on_sync)
+
+    def create_snapshot(self, _) -> None:
+        if not os.getenv("EVM_PRIVATE_KEY"):
+            rumps.alert("Private key required", "Set EVM_PRIVATE_KEY for snapshots")
+            return
+
+        def on_snapshot(result: str) -> None:
+            data = json.loads(result)
+
+            def notify() -> None:
+                if "error" in data:
+                    rumps.notification("Snapshot", "Error", data["error"])
+                else:
+                    rumps.notification(
+                        "Snapshot",
+                        "Created",
+                        f"{data.get('label')} ({data.get('investor_count')} investors)",
+                    )
+
+            rumps.call_on_main_thread(notify)
+
+        tools = self._get_tools()
+        self._run_async(
+            lambda: tools.create_cap_table_snapshot("menubar-snapshot"),
+            on_snapshot,
+        )
 
 
 if __name__ == "__main__":

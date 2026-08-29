@@ -27,6 +27,11 @@ Works on macOS, Linux, and Windows via Python.
 - **Audit Trail** — SQLite audit log for cap table and equity operations
 - **Equity Intelligence Agent** — AI advisor combining cap table, vesting, dilution, and market comps
 - **Full Pipeline** — End-to-end lifecycle demo (import → sync → vest → report → audit)
+- **Health Monitoring** — RPC, contract, and cap table health checks
+- **Cap Table Snapshots** — Point-in-time versioning with diff comparison
+- **Sync Daemon** — Scheduled background cap table sync (dry-run or live)
+- **Equity Team** — Multi-agent team for cap table, compliance, and IR
+- **Equity Workflow** — Programmatic import-to-export pipeline
 - **AI Agent** — Natural-language cap table management with structured output
 
 ## Prerequisites
@@ -98,6 +103,10 @@ print(tools.sync_cap_table(dry_run=False))
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py deploy-multisig --owners 0x111...,0x222... --required 2
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py audit list
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py audit record --action board_approval --detail "409A signed"
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py health
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py snapshot create --label "pre-series-a"
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py snapshot list
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py sync-daemon --iterations 3
 ```
 
 ## Examples
@@ -116,6 +125,9 @@ print(tools.sync_cap_table(dry_run=False))
 | `10_webhook_daemon.py` | Continuous webhook polling daemon |
 | `11_equity_intelligence_agent.py` | AI equity advisor with dilution and market comps |
 | `12_full_pipeline.py` | End-to-end lifecycle demo |
+| `13_equity_team.py` | Multi-agent team for cap table, compliance, and IR |
+| `14_equity_workflow.py` | Programmatic import-to-export workflow |
+| `15_sync_daemon.py` | Continuous cap table sync daemon |
 | `menubar.py` | macOS menu bar app (requires `pip install rumps`) |
 | `cli.py` | macOS/Linux CLI for cap table operations |
 | `sample_cap_table.csv` | Sample CSV cap table for import |

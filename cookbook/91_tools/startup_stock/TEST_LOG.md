@@ -55,3 +55,27 @@
 **Description:** End-to-end lifecycle demo from import to audit.
 
 ---
+
+### 13_equity_team.py
+
+**Status:** PENDING
+
+**Description:** Multi-agent team for cap table, compliance, and IR.
+
+---
+
+### 14_equity_workflow.py
+
+**Status:** PENDING
+
+**Description:** Programmatic import-to-export workflow.
+
+---
+
+### 15_sync_daemon.py
+
+**Status:** PENDING
+
+**Description:** Continuous cap table sync daemon.
+
+---

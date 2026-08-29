@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from os import getenv
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any, Callable, List, Optional
 
 from agno.tools.startup_stock.audit import AuditStore
 from agno.tools.startup_stock.deploy import deploy_multisig, deploy_vesting_vault
+from agno.tools.startup_stock.health import run_health_check
 from agno.tools.startup_stock.multisig import MultiSigManager
 from agno.tools.startup_stock.reports import (
     DilutionScenario,
@@ -23,6 +25,8 @@ from agno.tools.startup_stock.reports import (
 from agno.tools.startup_stock.reports import (
     generate_equity_report as build_equity_report,
 )
+from agno.tools.startup_stock.snapshots import CapTableSnapshotStore
+from agno.tools.startup_stock.sync_daemon import CapTableSyncDaemon
 from agno.tools.startup_stock.toolkit import StartupStockTools, _to_json, shares_to_wei, wei_to_shares
 from agno.tools.startup_stock.vesting import (
     VestingManager,
@@ -49,6 +53,8 @@ class StartupStockAdvancedTools(StartupStockTools):
         enable_reports: bool = True,
         enable_deploy_extended: bool = True,
         enable_audit: bool = True,
+        enable_health: bool = True,
+        enable_snapshots: bool = True,
         all_advanced: bool = False,
         **kwargs,
     ):
@@ -58,6 +64,8 @@ class StartupStockAdvancedTools(StartupStockTools):
         self._enable_reports = all_advanced or enable_reports
         self._enable_deploy_extended = all_advanced or enable_deploy_extended
         self._enable_audit = all_advanced or enable_audit
+        self._enable_health = all_advanced or enable_health
+        self._enable_snapshots = all_advanced or enable_snapshots
 
         super().__init__(**kwargs)
 
@@ -68,9 +76,11 @@ class StartupStockAdvancedTools(StartupStockTools):
         vesting_db = str(Path(gettempdir()) / "startup_stock_vesting.db")
         webhook_db = str(Path(gettempdir()) / "startup_stock_webhooks.db")
         audit_db = str(Path(gettempdir()) / "startup_stock_audit.db")
+        snapshot_db = str(Path(gettempdir()) / "startup_stock_snapshots.db")
         self.vesting_store = VestingStore(vesting_db)
         self.webhook_store = WebhookDeliveryStore(webhook_db)
         self.audit_store = AuditStore(audit_db)
+        self.snapshot_store = CapTableSnapshotStore(snapshot_db)
 
         assert self.private_key is not None
         self.vesting_manager = VestingManager(
@@ -172,6 +182,31 @@ class StartupStockAdvancedTools(StartupStockTools):
                 [
                     (self.aget_audit_log, "get_audit_log"),
                     (self.alog_audit_event, "log_audit_event"),
+                ]
+            )
+
+        if self._enable_health:
+            extra_tools.extend([self.run_health_check, self.run_sync_daemon_once])
+            extra_async.extend(
+                [
+                    (self.arun_health_check, "run_health_check"),
+                    (self.arun_sync_daemon_once, "run_sync_daemon_once"),
+                ]
+            )
+
+        if self._enable_snapshots:
+            extra_tools.extend(
+                [
+                    self.create_cap_table_snapshot,
+                    self.list_cap_table_snapshots,
+                    self.compare_cap_table_snapshots,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.acreate_cap_table_snapshot, "create_cap_table_snapshot"),
+                    (self.alist_cap_table_snapshots, "list_cap_table_snapshots"),
+                    (self.acompare_cap_table_snapshots, "compare_cap_table_snapshots"),
                 ]
             )
 
@@ -526,6 +561,65 @@ class StartupStockAdvancedTools(StartupStockTools):
             return _to_json({"error": str(e)})
 
     # -------------------------------------------------------------------------
+    # Health and sync daemon tools
+    # -------------------------------------------------------------------------
+
+    def run_health_check(self) -> str:
+        """Run infrastructure health checks (RPC, contract, cap table, config)."""
+        try:
+            result = run_health_check(
+                web3_client=self.web3_client,
+                contract_client=self.contract_client,
+                cap_table_store=self.store,
+                vesting_vault_configured=bool(self.vesting_vault_address),
+                multisig_configured=bool(self.multisig_address),
+                webhook_configured=bool(self.webhook_url),
+            )
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def run_sync_daemon_once(self, dry_run: bool = True) -> str:
+        """Run a single cap table sync daemon cycle."""
+        try:
+
+            def sync_fn(dry: bool) -> dict:
+                return json.loads(self.sync_cap_table(dry_run=dry))
+
+            daemon = CapTableSyncDaemon(sync_fn=sync_fn, dry_run=dry_run)
+            return _to_json(daemon.run_once())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    # -------------------------------------------------------------------------
+    # Snapshot tools
+    # -------------------------------------------------------------------------
+
+    def create_cap_table_snapshot(self, label: str) -> str:
+        """Create a point-in-time cap table snapshot for compliance."""
+        try:
+            result = self.snapshot_store.create_snapshot(self.store, label)
+            self._log_audit("create_snapshot", detail=result)
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e), "label": label})
+
+    def list_cap_table_snapshots(self, limit: int = 20) -> str:
+        """List cap table snapshots ordered by creation time."""
+        try:
+            snapshots = self.snapshot_store.list_snapshots(limit=limit)
+            return _to_json({"snapshots": snapshots, "count": len(snapshots)})
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def compare_cap_table_snapshots(self, snapshot_id_a: str, snapshot_id_b: str) -> str:
+        """Compare two cap table snapshots and show diffs."""
+        try:
+            return _to_json(self.snapshot_store.compare_snapshots(snapshot_id_a, snapshot_id_b))
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    # -------------------------------------------------------------------------
     # Async variants
     # -------------------------------------------------------------------------
 
@@ -591,3 +685,18 @@ class StartupStockAdvancedTools(StartupStockTools):
 
     async def alog_audit_event(self, action: str, target: Optional[str] = None, detail: Optional[str] = None) -> str:
         return self.log_audit_event(action, target=target, detail=detail)
+
+    async def arun_health_check(self) -> str:
+        return self.run_health_check()
+
+    async def arun_sync_daemon_once(self, dry_run: bool = True) -> str:
+        return self.run_sync_daemon_once(dry_run=dry_run)
+
+    async def acreate_cap_table_snapshot(self, label: str) -> str:
+        return self.create_cap_table_snapshot(label)
+
+    async def alist_cap_table_snapshots(self, limit: int = 20) -> str:
+        return self.list_cap_table_snapshots(limit=limit)
+
+    async def acompare_cap_table_snapshots(self, snapshot_id_a: str, snapshot_id_b: str) -> str:
+        return self.compare_cap_table_snapshots(snapshot_id_a, snapshot_id_b)
