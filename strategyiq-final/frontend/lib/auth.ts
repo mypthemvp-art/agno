@@ -19,9 +19,9 @@ export function getSession(): AuthSession | null {
 export function saveSession(token: string, tier: string): void {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(TIER_KEY, tier);
-  // Legacy keys used by AIAgent
   localStorage.setItem("token", token);
   localStorage.setItem("tier", tier);
+  document.cookie = `token=${token}; path=/; max-age=86400; SameSite=Lax`;
 }
 
 export function clearSession(): void {
@@ -29,6 +29,7 @@ export function clearSession(): void {
   localStorage.removeItem(TIER_KEY);
   localStorage.removeItem("token");
   localStorage.removeItem("tier");
+  document.cookie = "token=; path=/; max-age=0";
 }
 
 export async function register(email: string, password: string): Promise<AuthSession> {

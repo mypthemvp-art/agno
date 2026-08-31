@@ -90,6 +90,16 @@ GitHub Actions workflow at `.github/workflows/deploy.yml`:
 
 Required secrets: `VERCEL_TOKEN`, `ORG_ID`, `PROJECT_ID`, `AWS_ROLE_TO_ASSUME`, `SUBNET_IDS`, `SG_ID`
 
+## Edge API (Vercel)
+
+| Route | Runtime | Description |
+|-------|---------|-------------|
+| `/api/chat` | Edge | JWT verify + Upstash 3/day limit (beginner) → FastAPI `/ai/agent` |
+| `/api/billing/checkout` | Edge | Proxy to Stripe checkout |
+| `middleware.ts` | Edge | Protects `/dashboard`, `/api/chat`, `/api/billing` |
+
+Required Vercel env: `JWT_SECRET`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `NEXT_PUBLIC_API_URL`
+
 ## Zip Distribution
 
 ```bash

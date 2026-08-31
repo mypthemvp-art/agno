@@ -58,7 +58,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(user.id, "beginner")
+    token = create_access_token(user.id, "beginner", user.email)
     return TokenResponse(access_token=token, tier="beginner")
 
 
@@ -74,7 +74,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     tier = _effective_tier(user)
-    token = create_access_token(user.id, tier)
+    token = create_access_token(user.id, tier, user.email)
     return TokenResponse(access_token=token, tier=tier)
 
 
