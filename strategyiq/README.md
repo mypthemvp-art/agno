@@ -67,7 +67,9 @@ strategyiq/
 | Module | Endpoint | Tier | Description |
 |--------|----------|------|-------------|
 | EQS | `POST /eqs/screen` | All | 50-filter screener, 15min Redis cache |
-| PORT | `POST /port/analyze` | Elite | Sharpe = sqrt(252)*mean/std, VaR = 5th pct |
+| PORT | `POST /port/{id}/var` | Elite | Async VaR via Celery + holdings table |
+| PORT | `GET /port/var/{job_id}` | Elite | Poll Celery VaR job result |
+| AI | `POST /ai/agent` | All | Tier-gated agent chat (proxied via `/api/chat`) |
 | Grok | `POST /grok/breaking` | All | Breaking news via Grok |
 | Market | `GET /market/quote/{symbol}` | All | Polygon.io quotes (delayed for Beginner) |
 | Billing | `POST /billing/checkout` | All | Stripe subscription checkout |

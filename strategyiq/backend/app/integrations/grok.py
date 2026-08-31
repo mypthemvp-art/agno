@@ -36,6 +36,9 @@ class GrokClient:
         )
         return await self._chat(prompt)
 
+    async def chat(self, prompt: str) -> dict:
+        return await self._chat(prompt)
+
     async def _chat(self, prompt: str) -> dict:
         async with httpx.AsyncClient() as client:
             response = await client.post(

@@ -55,12 +55,31 @@ services:
       - .env
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      FASTAPI_URL: http://backend:8000
     depends_on:
       - backend
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://strategyiq:strategyiq@timescaledb:5432/strategyiq
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.celery_app worker --loglevel=info
 
 volumes:
   timescale_data:

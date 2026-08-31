@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.constants import SEC_DISCLAIMER
-from app.routers import billing, grok, market, portfolio, screener
+from app.routers import ai, billing, grok, market, portfolio, screener
 
 
 @asynccontextmanager
@@ -27,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(ai.router)
 app.include_router(screener.router)
 app.include_router(portfolio.router)
 app.include_router(grok.router)
