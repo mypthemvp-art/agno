@@ -86,6 +86,19 @@ async def analyze(tier: UserTier = Depends(require_tier(UserTier.ELITE))):
     ...
 ```
 
+## Deploy to Vercel
+
+```bash
+# From strategyiq/ — deploys Next.js frontend + FastAPI as Python serverless function
+vercel deploy
+
+# Routes:
+#   /api/chat          → Next.js route proxy to FastAPI /ai/agent
+#   /backend/*         → FastAPI via api/backend/index.py (Mangum)
+```
+
+Set `FASTAPI_URL` in Vercel env vars for the chat proxy when FastAPI runs separately.
+
 ## Deploy to AWS
 
 ```bash

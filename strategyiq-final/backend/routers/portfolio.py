@@ -27,6 +27,76 @@ class SavePortfolioRequest(BaseModel):
     holdings: list[HoldingInput]
 
 
+class AnalyzeRequest(BaseModel):
+    holdings: list[HoldingInput]
+    lookback_days: int = Field(252, ge=30, le=756)
+
+
+@router.post("/analyze")
+def analyze_portfolio(
+    request: AnalyzeRequest,
+    user: User = Depends(get_current_user),
+    tier: UserTier = Depends(require_tier(UserTier.ELITE)),
+    db: Session = Depends(get_db),
+):
+    """Synchronous PORT analytics: Sharpe = sqrt(252)*mean/std, VaR = 5th percentile."""
+    import math
+
+    import httpx
+    import numpy as np
+
+    from config import settings
+
+    total = sum(h.weight for h in request.holdings)
+    if abs(total - 1.0) > 0.01:
+        raise HTTPException(status_code=400, detail="Weights must sum to 1.0")
+
+    portfolio_returns = None
+    holding_details = []
+
+    for h in request.holdings:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.get(
+                f"https://financialmodelingprep.com/api/v3/historical-price-full/{h.symbol.upper()}",
+                params={"apikey": settings.fmp_api_key},
+            )
+            resp.raise_for_status()
+            historical = resp.json().get("historical", [])
+        if len(historical) < 2:
+            raise HTTPException(status_code=404, detail=f"Insufficient history for {h.symbol}")
+        closes = [e["close"] for e in historical[: request.lookback_days + 1]]
+        closes.reverse()
+        returns = np.diff(closes) / closes[:-1]
+        weighted = returns * h.weight
+        if portfolio_returns is None:
+            portfolio_returns = weighted
+        else:
+            n = min(len(portfolio_returns), len(weighted))
+            portfolio_returns = portfolio_returns[:n] + weighted[:n]
+        holding_details.append({
+            "symbol": h.symbol,
+            "weight": h.weight,
+            "mean_return": float(np.mean(returns)),
+            "volatility": float(np.std(returns, ddof=1)),
+        })
+
+    assert portfolio_returns is not None
+    std = float(np.std(portfolio_returns, ddof=1))
+    sharpe = float(math.sqrt(252) * np.mean(portfolio_returns) / std) if std else 0.0
+    var_95 = float(np.percentile(portfolio_returns, 5))
+
+    log_query(user, "/port/analyze", db)
+    return {
+        "sharpe_ratio": round(sharpe, 4),
+        "var_95": round(var_95, 6),
+        "mean_daily_return": round(float(np.mean(portfolio_returns)), 6),
+        "std_daily_return": round(std, 6),
+        "total_return": round(float(np.prod(1 + portfolio_returns) - 1), 4),
+        "holdings": holding_details,
+        "disclaimer": SEC_DISCLAIMER,
+    }
+
+
 @router.post("/save")
 def save_portfolio(
     request: SavePortfolioRequest,
