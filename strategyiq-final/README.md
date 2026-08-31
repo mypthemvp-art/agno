@@ -34,6 +34,16 @@ cd infra && docker-compose up
 | Pro | $29/mo | Real-time, signals, Grok |
 | Elite | $79/mo | Custom agents, PORT VaR/Sharpe |
 
+## Auth
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /auth/register` | Create Beginner account, returns JWT |
+| `POST /auth/login` | Login, returns JWT + tier |
+| `GET /auth/me` | Current user profile |
+
+Frontend: `/login` page + `AuthBar` in dashboard header.
+
 ## Key Modules
 
 | Module | Path | Description |
