@@ -23,3 +23,13 @@ def test_screener_filter_count():
     from routers.screener import ScreenerFilters
 
     assert len(ScreenerFilters.model_fields) == 50
+
+
+def test_screener_filters_endpoint():
+    from routers.screener import list_filters
+
+    payload = list_filters()
+    assert payload["filter_count"] == 50
+    assert "market_cap_more_than" in payload["filters"]
+    assert payload["cache_ttl_seconds"] > 0
+    assert "not financial advice" in payload["disclaimer"].lower()
