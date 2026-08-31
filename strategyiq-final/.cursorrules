@@ -9,6 +9,7 @@ Rules:
 - Grok: route breaking/trending to integrations/grok.py
 - All DB changes via Alembic: alembic revision --autogenerate
 - Deploy: docker-compose up locally, deploy-aws.sh for ECS
+- CI/CD: .github/workflows/deploy.yml — Vercel frontend + AWS ECS backend on push to main
 
 Tiers:
 - Beginner (free): 3 queries/day, delayed data

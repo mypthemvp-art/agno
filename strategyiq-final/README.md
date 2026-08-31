@@ -67,6 +67,19 @@ vercel deploy
 cd infra/terraform && terraform init && terraform apply
 ```
 
+## CI/CD
+
+GitHub Actions workflow at `.github/workflows/deploy.yml`:
+
+| Job | Trigger | Action |
+|-----|---------|--------|
+| `test` | PR + push to main | flake8, pytest, frontend build |
+| `deploy-frontend` | push to main | Vercel production deploy |
+| `deploy-backend` | push to main | ECR push + ECS rolling deploy + Alembic migrate |
+| `notify` | after deploy | Slack/Discord hook (optional) |
+
+Required secrets: `VERCEL_TOKEN`, `ORG_ID`, `PROJECT_ID`, `AWS_ROLE_TO_ASSUME`, `SUBNET_IDS`, `SG_ID`
+
 ## Zip Distribution
 
 ```bash
