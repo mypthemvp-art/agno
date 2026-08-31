@@ -12,6 +12,7 @@ from billing.stripe import router as billing_router
 from constants import SEC_DISCLAIMER
 from routers.ai import router as ai_router
 from routers.auth import router as auth_router
+from routers.market import router as market_router
 from routers.portfolio import router as port_router
 from routers.screener import router as screener_router
 
@@ -30,6 +31,7 @@ app.include_router(screener_router)
 app.include_router(port_router)
 app.include_router(ai_router)
 app.include_router(billing_router)
+app.include_router(market_router)
 
 
 @app.get("/health")

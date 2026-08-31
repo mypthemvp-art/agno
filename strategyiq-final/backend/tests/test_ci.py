@@ -33,3 +33,23 @@ def test_screener_filters_endpoint():
     assert "market_cap_more_than" in payload["filters"]
     assert payload["cache_ttl_seconds"] > 0
     assert "not financial advice" in payload["disclaimer"].lower()
+
+
+def test_polygon_bars_to_candles():
+    from integrations.polygon import bars_to_candles
+
+    candles = bars_to_candles(
+        [{"t": 1_704_067_200_000, "o": 10, "h": 12, "l": 9, "c": 11, "v": 1000}]
+    )
+    assert len(candles) == 1
+    assert candles[0]["time"] == "2024-01-01"
+    assert candles[0]["open"] == 10
+    assert candles[0]["close"] == 11
+
+
+def test_market_router_exists():
+    from routers.market import router
+
+    paths = [route.path for route in router.routes]
+    assert any(p.endswith("/history/{symbol}") for p in paths)
+    assert any(p.endswith("/quote/{symbol}") for p in paths)

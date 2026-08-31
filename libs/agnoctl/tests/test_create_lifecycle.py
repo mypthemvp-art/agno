@@ -267,13 +267,14 @@ def test_create_arrow_selector_transitions_to_name_prompt_in_narrow_pty(tmp_path
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
+        start_new_session=True,
     )
     os.close(slave_fd)
 
     output = b""
     sent_selection = False
     sent_abort = False
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 15
     try:
         while time.monotonic() < deadline:
             ready, _, _ = select.select([master_fd], [], [], 0.1)
@@ -285,20 +286,38 @@ def test_create_arrow_selector_transitions_to_name_prompt_in_narrow_pty(tmp_path
                 if not chunk:
                     break
                 output += chunk
-                if b"agentos-render" in output and not sent_selection:
+                # Wait until the full compact selector is painted before sending keys.
+                if (
+                    b"agentos-render" in output
+                    and (b"move" in output or b"Template" in output)
+                    and not sent_selection
+                ):
                     os.write(master_fd, b"\x1b[B\r")
                     sent_selection = True
                 if b"Project name" in output and not sent_abort:
-                    process.send_signal(signal.SIGINT)
+                    # Deliver Ctrl-C through the PTY (what a user presses) and SIGINT
+                    # to the process group so Click/typer abort reliably under CI load.
+                    os.write(master_fd, b"\x03")
+                    try:
+                        os.killpg(process.pid, signal.SIGINT)
+                    except ProcessLookupError:
+                        pass
                     sent_abort = True
             elif process.poll() is not None:
                 break
         try:
-            return_code = process.wait(timeout=2)
+            return_code = process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.kill()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                process.kill()
             process.wait(timeout=2)
-            pytest.fail("create did not exit after selecting a template and aborting the name prompt")
+            decoded = output.decode(errors="replace")
+            pytest.fail(
+                "create did not exit after selecting a template and aborting the name prompt: "
+                + f"sent_selection={sent_selection} sent_abort={sent_abort} output={decoded!r}"
+            )
     finally:
         os.close(master_fd)
 

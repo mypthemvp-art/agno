@@ -219,7 +219,10 @@ def _supports_arrow_selector() -> bool:
 def _prompt_project_name() -> str:
     """Prompt until the project name is safe and available in the current directory."""
     while True:
-        name = str(typer.prompt("Project name", default=DEFAULT_PROJECT_NAME)).strip()
+        try:
+            name = str(typer.prompt("Project name", default=DEFAULT_PROJECT_NAME)).strip()
+        except (KeyboardInterrupt, EOFError):
+            raise typer.Abort() from None
         try:
             validate_project_name(name)
         except CLIError as e:
