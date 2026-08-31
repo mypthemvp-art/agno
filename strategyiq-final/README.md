@@ -34,6 +34,16 @@ cd infra && docker-compose up
 | Pro | $29/mo | Real-time, signals, Grok |
 | Elite | $79/mo | Custom agents, PORT VaR/Sharpe |
 
+## Auth
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /auth/register` | Create Beginner account, returns JWT |
+| `POST /auth/login` | Login, returns JWT + tier |
+| `GET /auth/me` | Current user profile |
+
+Frontend: `/login` page + `AuthBar` in dashboard header.
+
 ## Key Modules
 
 | Module | Path | Description |
@@ -66,6 +76,29 @@ vercel deploy
 # Terraform
 cd infra/terraform && terraform init && terraform apply
 ```
+
+## CI/CD
+
+GitHub Actions workflow at `.github/workflows/deploy.yml`:
+
+| Job | Trigger | Action |
+|-----|---------|--------|
+| `test` | PR + push to main | flake8, pytest, frontend build |
+| `deploy-frontend` | push to main | Vercel production deploy |
+| `deploy-backend` | push to main | ECR push + ECS rolling deploy + Alembic migrate |
+| `notify` | after deploy | Slack/Discord hook (optional) |
+
+Required secrets: `VERCEL_TOKEN`, `ORG_ID`, `PROJECT_ID`, `AWS_ROLE_TO_ASSUME`, `SUBNET_IDS`, `SG_ID`
+
+## Edge API (Vercel)
+
+| Route | Runtime | Description |
+|-------|---------|-------------|
+| `/api/chat` | Edge | JWT verify + Upstash 3/day limit (beginner) → FastAPI `/ai/agent` |
+| `/api/billing/checkout` | Edge | Proxy to Stripe checkout |
+| `middleware.ts` | Edge | Protects `/dashboard`, `/api/chat`, `/api/billing` |
+
+Required Vercel env: `JWT_SECRET`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `NEXT_PUBLIC_API_URL`
 
 ## Zip Distribution
 

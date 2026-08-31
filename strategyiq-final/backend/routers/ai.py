@@ -1,6 +1,10 @@
 """AI agent + Grok routing with tier gating."""
 
+import json
+from typing import AsyncGenerator
+
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from constants import SEC_DISCLAIMER, UserTier
@@ -20,9 +24,30 @@ class ChatMessage(BaseModel):
 
 
 class AgentRequest(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] | None = None
+    prompt: str | None = None
+    symbol: str = "AAPL"
+    asset_class: str = "stock"
     agent_id: str | None = None
     use_rag: bool = True
+
+
+class AgentStreamRequest(BaseModel):
+    prompt: str
+    symbol: str = "AAPL"
+    asset_class: str = "stock"
+    tier: str | None = None
+    user_id: str | None = None
+
+
+def _extract_prompt(request: AgentRequest) -> str:
+    if request.prompt:
+        return request.prompt
+    if request.messages:
+        last = next((m.content for m in reversed(request.messages) if m.role == "user"), None)
+        if last:
+            return last
+    raise HTTPException(status_code=400, detail="No user message")
 
 
 @router.post("/agent")
@@ -37,14 +62,37 @@ async def ai_agent(
     if x_user_tier and x_user_tier != tier.value:
         raise HTTPException(status_code=403, detail="X-User-Tier mismatch")
 
-    last = next((m.content for m in reversed(request.messages) if m.role == "user"), None)
-    if not last:
-        raise HTTPException(status_code=400, detail="No user message")
-
-    route_grok = any(kw in last.lower() for kw in ("breaking", "trending", "x.com", "twitter"))
-    result = await tier_agent.run(last, tier, use_rag=request.use_rag, route_breaking=route_grok)
+    prompt = _extract_prompt(request)
+    route_grok = any(kw in prompt.lower() for kw in ("breaking", "trending", "x.com", "twitter"))
+    result = await tier_agent.run(prompt, tier, use_rag=request.use_rag, route_breaking=route_grok)
     log_query(user, "/ai/agent", db)
-    return {**result, "disclaimer": SEC_DISCLAIMER}
+    return {**result, "symbol": request.symbol, "disclaimer": SEC_DISCLAIMER}
+
+
+async def _stream_tokens(text: str) -> AsyncGenerator[str, None]:
+    words = text.split(" ")
+    for i, word in enumerate(words):
+        chunk = word if i == 0 else f" {word}"
+        yield f"data: {json.dumps({'token': chunk})}\n\n"
+    yield f"data: {json.dumps({'done': True, 'disclaimer': SEC_DISCLAIMER})}\n\n"
+
+
+@router.post("/agent/stream")
+async def ai_agent_stream(
+    request: AgentStreamRequest,
+    user: User = Depends(get_current_user),
+    tier: UserTier = Depends(get_user_tier),
+    db: Session = Depends(get_db),
+    x_user_tier: str | None = Header(None, alias="X-Tier"),
+    _: None = Depends(check_query_limit),
+):
+    if x_user_tier and x_user_tier != tier.value:
+        raise HTTPException(status_code=403, detail="X-Tier mismatch")
+
+    route_grok = any(kw in request.prompt.lower() for kw in ("breaking", "trending", "x.com", "twitter"))
+    result = await tier_agent.run(request.prompt, tier, use_rag=True, route_breaking=route_grok)
+    log_query(user, "/ai/agent/stream", db)
+    return StreamingResponse(_stream_tokens(result["response"]), media_type="text/event-stream")
 
 
 @router.post("/grok/breaking")

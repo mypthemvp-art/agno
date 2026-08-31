@@ -1,0 +1,27 @@
+{
+  "family": "strategyiq-migrate",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "migrate",
+      "image": "ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/strategyiq-api:latest",
+      "essential": true,
+      "command": ["alembic", "upgrade", "head"],
+      "environment": [
+        { "name": "DATABASE_URL", "value": "postgresql+psycopg2://strategy:pass@RDS_HOST:5432/strategyiq" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/strategyiq-migrate",
+          "awslogs-region": "us-west-2",
+          "awslogs-stream-prefix": "migrate"
+        }
+      }
+    }
+  ]
+}

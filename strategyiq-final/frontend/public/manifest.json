@@ -1,0 +1,16 @@
+{
+  "name": "StrategyIQ",
+  "short_name": "StrategyIQ",
+  "description": "Retail Bloomberg Terminal",
+  "start_url": "/mobile",
+  "display": "standalone",
+  "background_color": "#0a0e17",
+  "theme_color": "#f59e0b",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

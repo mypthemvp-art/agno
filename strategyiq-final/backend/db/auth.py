@@ -24,9 +24,9 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(user_id: int, tier: str) -> str:
+def create_access_token(user_id: int, tier: str, email: str = "") -> str:
     expire = datetime.now(UTC) + timedelta(hours=24)
-    payload = {"sub": str(user_id), "tier": tier, "exp": expire}
+    payload = {"sub": str(user_id), "tier": tier, "email": email, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 

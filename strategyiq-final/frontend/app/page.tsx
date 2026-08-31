@@ -2,17 +2,19 @@ import { Chart } from "@/components/Chart";
 import { PortGo } from "@/components/PortGo";
 import { AIAgent } from "@/components/AIAgent";
 import { Signals } from "@/components/Signals";
+import { AuthBar } from "@/components/AuthBar";
 
 export default function DesktopPage() {
   return (
     <div className="min-h-screen grid grid-rows-[auto_1fr]">
       <header className="border-b border-terminal-border bg-terminal-panel px-6 py-3 flex justify-between">
         <h1 className="text-terminal-accent font-bold text-xl tracking-wider">StrategyIQ</h1>
-        <nav className="flex gap-4 text-sm text-terminal-muted">
+        <nav className="flex gap-4 text-sm text-terminal-muted items-center">
           <span>EQS</span>
           <span>PORT</span>
           <span>NEWS</span>
           <span>CHAT</span>
+          <AuthBar />
         </nav>
       </header>
 

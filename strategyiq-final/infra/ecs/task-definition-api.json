@@ -1,0 +1,40 @@
+{
+  "family": "strategyiq-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/strategyiqTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/strategyiq-api:latest",
+      "essential": true,
+      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "DATABASE_URL", "value": "postgresql+psycopg2://strategy:pass@RDS_HOST:5432/strategyiq" },
+        { "name": "REDIS_URL", "value": "redis://REDIS_HOST:6379/0" }
+      ],
+      "secrets": [
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-west-2:ACCOUNT_ID:secret:strategyiq/jwt" },
+        { "name": "STRIPE_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:ACCOUNT_ID:secret:strategyiq/stripe" },
+        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-west-2:ACCOUNT_ID:secret:strategyiq/openai" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/strategyiq-api",
+          "awslogs-region": "us-west-2",
+          "awslogs-stream-prefix": "api"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3
+      }
+    }
+  ]
+}
