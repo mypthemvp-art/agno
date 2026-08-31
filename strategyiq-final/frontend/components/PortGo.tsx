@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { API_URL, SEC_DISCLAIMER } from "@/lib/constants";
+import { getSession } from "@/lib/auth";
 
 interface Metrics {
   sharpe_ratio: number;
   var_95: number;
   total_return: number;
+  std_daily_return?: number;
   monte_carlo_var?: number;
 }
 
@@ -21,27 +23,43 @@ function monteCarloVar(dailyVol: number, days: number = 1, simulations: number =
 }
 
 export function PortGo() {
-  const [holdings, setHoldings] = useState([
+  const [holdings] = useState([
     { symbol: "AAPL", weight: 0.4 },
     { symbol: "MSFT", weight: 0.35 },
     { symbol: "NVDA", weight: 0.25 },
   ]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const analyze = async () => {
     setLoading(true);
+    setError(null);
     try {
+      const session = getSession();
+      if (!session?.token) {
+        setError("Sign in required for PORT analytics (Elite tier).");
+        return;
+      }
       const res = await fetch(`${API_URL}/port/analyze`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
         body: JSON.stringify({ holdings, lookback_days: 252 }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        const mcVar = monteCarloVar(data.std_daily_return || 0.02);
-        setMetrics({ ...data, monte_carlo_var: mcVar });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(typeof data.detail === "string" ? data.detail : "PORT analyze failed");
+        setMetrics(null);
+        return;
       }
+      const mcVar = monteCarloVar(data.std_daily_return || 0.02);
+      setMetrics({ ...data, monte_carlo_var: mcVar });
+    } catch {
+      setError("PORT API unreachable");
+      setMetrics(null);
     } finally {
       setLoading(false);
     }
@@ -64,6 +82,7 @@ export function PortGo() {
       >
         {loading ? "Analyzing..." : "Analyze"}
       </button>
+      {error && <p className="text-sm text-terminal-red">{error}</p>}
       {metrics && (
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>Sharpe: <strong>{metrics.sharpe_ratio}</strong></div>

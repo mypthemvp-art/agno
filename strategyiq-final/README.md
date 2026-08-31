@@ -49,6 +49,7 @@ Frontend: `/login` page + `AuthBar` in dashboard header.
 | Module | Path | Description |
 |--------|------|-------------|
 | EQS | `backend/routers/screener.py` + `frontend/components/EqSGo.tsx` | 50 filters, presets, 15min Redis cache |
+| Market | `backend/routers/market.py` + `integrations/polygon.py` | History/quote via Polygon (FMP fallback) |
 | PORT | `backend/routers/portfolio.py` | Holdings table + Celery VaR |
 | RAG | `backend/rag/ingest.py` | 500 stocks SEC filings → Pinecone |
 | Crypto | `backend/workers/ingest_crypto.py` | 500 crypto → Pinecone |
