@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "installCommand": "cd frontend && npm install && pip install -r ../backend/requirements.txt",
+  "outputDirectory": "frontend/.next",
+  "functions": {
+    "api/backend/index.py": {
+      "runtime": "python3.12",
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "frontend/app/api/**/*.ts": { "maxDuration": 30 }
+  },
+  "rewrites": [
+    { "source": "/backend/:path*", "destination": "/api/backend" }
+  ]
+}

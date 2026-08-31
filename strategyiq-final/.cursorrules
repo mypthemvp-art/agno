@@ -1,0 +1,16 @@
+StrategyIQ — Bloomberg Terminal replica for retail.
+
+Rules:
+- Always include SEC disclaimer: "Financial information only, not financial advice"
+- Never scrape — use Polygon.io, CoinGecko Pro, FMP, Finnhub APIs with env keys
+- Tier gating via Depends(get_user_tier) checking subscription.active
+- EQS: routers/screener.py with 50 filters, cache 15min in Redis
+- PORT: PortGo.tsx — Sharpe = sqrt(252)*mean/std, VaR = 5th percentile, Monte Carlo
+- Grok: route breaking/trending to integrations/grok.py
+- All DB changes via Alembic: alembic revision --autogenerate
+- Deploy: docker-compose up locally, deploy-aws.sh for ECS
+
+Tiers:
+- Beginner (free): 3 queries/day, delayed data
+- Pro ($29): real-time + signals
+- Elite ($79): custom agents + PORT analytics

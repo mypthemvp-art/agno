@@ -1,0 +1,39 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "devCommand": "cd frontend && npm run dev",
+  "installCommand": "cd frontend && npm install && pip install -r ../api/requirements.txt",
+  "outputDirectory": "frontend/.next",
+  "regions": ["iad1"],
+  "functions": {
+    "api/backend/index.py": {
+      "runtime": "python3.12",
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "frontend/app/api/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/backend/:path*",
+      "destination": "/api/backend"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Credentials", "value": "true" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Authorization, Content-Type, X-User-Tier"
+        }
+      ]
+    }
+  ]
+}
