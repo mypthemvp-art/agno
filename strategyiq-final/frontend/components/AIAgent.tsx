@@ -2,6 +2,15 @@
 
 import { useState } from "react";
 import { SEC_DISCLAIMER } from "@/lib/constants";
+import { getSession } from "@/lib/auth";
+
+function formatApiError(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item))).join("; ");
+  }
+  return "Request failed";
+}
 
 export function AIAgent() {
   const [input, setInput] = useState("");
@@ -11,20 +20,34 @@ export function AIAgent() {
   const send = async () => {
     if (!input.trim()) return;
     setLoading(true);
+    setResponse(null);
     try {
+      const session = getSession();
+      if (!session?.token) {
+        setResponse("Sign in required to use the AI agent.");
+        return;
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-          "X-User-Tier": localStorage.getItem("tier") || "beginner",
+          Authorization: `Bearer ${session.token}`,
         },
-        body: JSON.stringify({ messages: [{ role: "user", content: input }] }),
+        body: JSON.stringify({
+          messages: [{ role: "user", content: input }],
+          stream: false,
+        }),
       });
+
       const data = await res.json();
+      if (!res.ok) {
+        setResponse(formatApiError(data.detail || data.error || data.message));
+        return;
+      }
       setResponse(data.response || data.detail || "No response");
     } catch {
-      setResponse("Chat unavailable — configure auth token.");
+      setResponse("Chat unavailable — check auth and API configuration.");
     } finally {
       setLoading(false);
     }

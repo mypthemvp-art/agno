@@ -53,3 +53,26 @@ def test_market_router_exists():
     paths = [route.path for route in router.routes]
     assert any(p.endswith("/history/{symbol}") for p in paths)
     assert any(p.endswith("/quote/{symbol}") for p in paths)
+
+
+def test_jwt_secret_validation():
+    import pytest
+
+    from config import validate_jwt_secret
+
+    with pytest.raises(ValueError, match="at least 16"):
+        validate_jwt_secret("")
+    with pytest.raises(ValueError, match="insecure"):
+        validate_jwt_secret("change_this_64_random_chars")
+    validate_jwt_secret("test-secret-for-ci-only-not-production")
+
+
+def test_ai_agent_routes_use_db_tier_only():
+    import inspect
+
+    from routers import ai as ai_module
+
+    agent_params = inspect.signature(ai_module.ai_agent).parameters
+    stream_params = inspect.signature(ai_module.ai_agent_stream).parameters
+    assert "x_user_tier" not in agent_params
+    assert "x_user_tier" not in stream_params

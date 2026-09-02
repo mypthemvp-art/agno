@@ -3,7 +3,7 @@
 import json
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -56,12 +56,8 @@ async def ai_agent(
     user: User = Depends(get_current_user),
     tier: UserTier = Depends(get_user_tier),
     db: Session = Depends(get_db),
-    x_user_tier: str | None = Header(None, alias="X-User-Tier"),
     _: None = Depends(check_query_limit),
 ):
-    if x_user_tier and x_user_tier != tier.value:
-        raise HTTPException(status_code=403, detail="X-User-Tier mismatch")
-
     prompt = _extract_prompt(request)
     route_grok = any(kw in prompt.lower() for kw in ("breaking", "trending", "x.com", "twitter"))
     result = await tier_agent.run(prompt, tier, use_rag=request.use_rag, route_breaking=route_grok)
@@ -83,12 +79,8 @@ async def ai_agent_stream(
     user: User = Depends(get_current_user),
     tier: UserTier = Depends(get_user_tier),
     db: Session = Depends(get_db),
-    x_user_tier: str | None = Header(None, alias="X-Tier"),
     _: None = Depends(check_query_limit),
 ):
-    if x_user_tier and x_user_tier != tier.value:
-        raise HTTPException(status_code=403, detail="X-Tier mismatch")
-
     route_grok = any(kw in request.prompt.lower() for kw in ("breaking", "trending", "x.com", "twitter"))
     result = await tier_agent.run(request.prompt, tier, use_rag=True, route_breaking=route_grok)
     log_query(user, "/ai/agent/stream", db)

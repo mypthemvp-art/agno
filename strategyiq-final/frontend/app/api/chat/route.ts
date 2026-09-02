@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { jwtVerify } from "jose";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { getJwtSecretKey, isJwtConfigured, JWT_MISCONFIGURED_MESSAGE } from "@/lib/jwt";
 
 type Tier = "beginner" | "pro" | "elite";
 
@@ -29,11 +30,13 @@ function getRatelimit() {
 async function verifyAuth(
   request: Request
 ): Promise<{ userId: string; tier: Tier; email: string; token: string } | null> {
+  if (!isJwtConfigured()) return null;
   const auth = request.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   const token = auth.replace("Bearer ", "");
+  const secret = getJwtSecretKey();
+  if (!secret) return null;
   try {
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
     const { payload } = await jwtVerify(token, secret);
     return {
       userId: payload.sub as string,
@@ -48,6 +51,13 @@ async function verifyAuth(
 
 export async function POST(request: Request) {
   try {
+    if (!isJwtConfigured()) {
+      return new Response(JSON.stringify({ error: JWT_MISCONFIGURED_MESSAGE }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const auth = await verifyAuth(request);
     if (!auth) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -64,7 +74,8 @@ export async function POST(request: Request) {
       "";
     const symbol = body.symbol || "AAPL";
     const asset_class = body.asset_class || "stock";
-    const stream = body.stream !== false;
+    // Default to JSON responses; SSE only when explicitly requested.
+    const stream = body.stream === true;
 
     if (tier === "beginner") {
       const ratelimit = getRatelimit();
@@ -89,8 +100,6 @@ export async function POST(request: Request) {
     const upstreamHeaders: Record<string, string> = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
-      "X-User-Tier": tier,
-      "X-User-Id": userId,
     };
 
     if (stream) {
@@ -99,6 +108,14 @@ export async function POST(request: Request) {
         headers: upstreamHeaders,
         body: JSON.stringify({ prompt, symbol, asset_class, tier, user_id: userId }),
       });
+
+      if (!upstream.ok) {
+        const data = await upstream.json().catch(() => ({ detail: upstream.statusText }));
+        return new Response(JSON.stringify(data), {
+          status: upstream.status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
       if (!upstream.body) {
         const data = await upstream.json();
@@ -112,7 +129,6 @@ export async function POST(request: Request) {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
-          "X-Tier": tier,
           "Access-Control-Allow-Origin": "*",
         },
       });
@@ -125,19 +141,19 @@ export async function POST(request: Request) {
         prompt,
         symbol,
         asset_class,
-        tier,
         messages: [{ role: "user", content: prompt }],
       }),
     });
     const data = await res.json();
-    return new Response(
-      JSON.stringify({ ...data, tier, userId, disclaimer: SEC_DISCLAIMER }),
-      { headers: { "Content-Type": "application/json", "X-Tier": tier } }
-    );
+    return new Response(JSON.stringify({ ...data, tier, userId, disclaimer: SEC_DISCLAIMER }), {
+      status: res.status,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return new Response(JSON.stringify({ error: "Internal error", message }), {
       status: 500,
+      headers: { "Content-Type": "application/json" },
     });
   }
 }

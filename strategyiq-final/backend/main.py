@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from billing.stripe import router as billing_router
+from config import settings, validate_jwt_secret
 from constants import SEC_DISCLAIMER
 from routers.ai import router as ai_router
 from routers.auth import router as auth_router
@@ -32,6 +33,11 @@ app.include_router(port_router)
 app.include_router(ai_router)
 app.include_router(billing_router)
 app.include_router(market_router)
+
+
+@app.on_event("startup")
+def _validate_startup_settings() -> None:
+    validate_jwt_secret(settings.jwt_secret)
 
 
 @app.get("/health")
