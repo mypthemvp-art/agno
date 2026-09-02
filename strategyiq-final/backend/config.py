@@ -1,5 +1,24 @@
 from pydantic_settings import BaseSettings
 
+INSECURE_JWT_SECRETS = frozenset(
+    {
+        "",
+        "change_this_64_random_chars",
+        "changeme",
+        "secret",
+        "dev-secret",
+    }
+)
+
+
+def validate_jwt_secret(secret: str) -> None:
+    """Reject missing or known-insecure JWT secrets at startup."""
+    trimmed = (secret or "").strip()
+    if len(trimmed) < 16:
+        raise ValueError("JWT_SECRET must be set to at least 16 characters")
+    if trimmed in INSECURE_JWT_SECRETS:
+        raise ValueError("JWT_SECRET uses an insecure default value")
+
 
 class Settings(BaseSettings):
     pinecone_api_key: str = ""
@@ -18,7 +37,7 @@ class Settings(BaseSettings):
     stripe_price_elite: str = ""
     database_url: str = "postgresql+psycopg2://strategy:pass@localhost:5432/strategyiq"
     redis_url: str = "redis://localhost:6379/0"
-    jwt_secret: str = "change_this_64_random_chars"
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     screener_cache_ttl: int = 900
 

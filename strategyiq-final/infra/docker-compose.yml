@@ -59,6 +59,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
       FASTAPI_URL: http://backend:8000
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-min-16-chars}
     depends_on:
       - backend
 
