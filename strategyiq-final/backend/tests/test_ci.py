@@ -76,3 +76,36 @@ def test_ai_agent_routes_use_db_tier_only():
     stream_params = inspect.signature(ai_module.ai_agent_stream).parameters
     assert "x_user_tier" not in agent_params
     assert "x_user_tier" not in stream_params
+
+
+def test_checkout_copies_tier_to_subscription_metadata():
+    import inspect
+
+    from billing import stripe as stripe_module
+
+    source = inspect.getsource(stripe_module.create_checkout)
+    assert "subscription_data" in source
+    assert "metadata" in source
+
+
+def test_ecs_healthcheck_does_not_require_curl():
+    import json
+    from pathlib import Path
+
+    task = json.loads(
+        (Path(__file__).resolve().parents[2] / "infra" / "ecs" / "task-definition-api.json").read_text()
+    )
+    command = " ".join(task["containerDefinitions"][0]["healthCheck"]["command"])
+    assert "curl" not in command
+    assert "python" in command
+    assert "/health" in command
+
+
+def test_middleware_protects_terminal_home():
+    from pathlib import Path
+
+    middleware = (Path(__file__).resolve().parents[2] / "frontend" / "middleware.ts").read_text()
+    assert 'pathname === "/"' in middleware or 'matcher: ["/"' in middleware
+    assert "/login" in middleware
+    assert "httpOnly" in (Path(__file__).resolve().parents[2] / "frontend" / "app" / "api" / "auth" / "session" / "route.ts").read_text()
+

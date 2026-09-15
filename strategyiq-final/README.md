@@ -101,6 +101,8 @@ Required secrets: `VERCEL_TOKEN`, `ORG_ID`, `PROJECT_ID`, `AWS_ROLE_TO_ASSUME`, 
 
 Required Vercel env: `JWT_SECRET` (min 16 chars, must match backend), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `NEXT_PUBLIC_API_URL`
 
+Middleware protects `/` (terminal), `/dashboard`, `/api/chat`, and `/api/billing`. Login sets an HttpOnly `token` cookie via `POST /api/auth/session`.
+
 ## Zip Distribution
 
 ```bash
