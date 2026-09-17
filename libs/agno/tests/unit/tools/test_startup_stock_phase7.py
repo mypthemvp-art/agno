@@ -1,15 +1,19 @@
-"""Unit tests for startup stock phase 7: option pool, 409A, SAFE/SAFT."""
+"""Unit tests for startup stock phase 7: option pool, 409A, SAFE, transfer policy, alerts."""
 
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from agno.tools.startup_stock.instruments import (
-    InstrumentStore,
-    convert_safe,
+from agno.tools.startup_stock.alerts import (
+    build_alert_from_health,
+    build_alert_from_sync,
+    evaluate_and_alert,
 )
+from agno.tools.startup_stock.circuit_breaker import CircuitBreaker
+from agno.tools.startup_stock.instruments import InstrumentStore, convert_safe
 from agno.tools.startup_stock.option_pool import OptionPoolStore
+from agno.tools.startup_stock.transfer_policy import TransferPolicyStore
 from agno.tools.startup_stock.valuation import (
     Valuation409AStore,
     compute_option_intrinsic_value,
@@ -121,3 +125,82 @@ class TestInstruments:
         assert conversion["conversion_method"] == "valuation_cap"
         assert conversion["conversion_price"] == 4.0
         assert conversion["converted_shares"] == 25000.0
+
+
+class TestTransferPolicy:
+    def test_allowlist_enforcement(self, temp_dir):
+        store = TransferPolicyStore(str(Path(temp_dir) / "policy.db"))
+        store.update_policy(restricted=True, require_allowlist=True)
+        sender = "0x1111111111111111111111111111111111111111"
+        recipient = "0x2222222222222222222222222222222222222222"
+        blocked = store.check_transfer_allowed(sender, recipient)
+        assert blocked["allowed"] is False
+
+        store.add_to_allowlist(sender, label="founder")
+        store.add_to_allowlist(recipient, label="investor")
+        allowed = store.check_transfer_allowed(sender, recipient)
+        assert allowed["allowed"] is True
+
+    def test_unrestricted_policy(self, temp_dir):
+        store = TransferPolicyStore(str(Path(temp_dir) / "policy.db"))
+        store.update_policy(restricted=False)
+        result = store.check_transfer_allowed(
+            "0x1111111111111111111111111111111111111111",
+            "0x2222222222222222222222222222222222222222",
+        )
+        assert result["allowed"] is True
+
+
+class TestCircuitBreaker:
+    def test_opens_after_threshold(self):
+        breaker = CircuitBreaker(failure_threshold=3, recovery_timeout_seconds=60, name="test")
+        for _ in range(3):
+            try:
+                breaker.call(lambda: (_ for _ in ()).throw(RuntimeError("rpc down")))
+            except RuntimeError:
+                pass
+        assert breaker.state == "open"
+        with pytest.raises(RuntimeError, match="open"):
+            breaker.call(lambda: 1)
+
+    def test_reset(self):
+        breaker = CircuitBreaker(failure_threshold=1)
+        try:
+            breaker.call(lambda: (_ for _ in ()).throw(RuntimeError("fail")))
+        except RuntimeError:
+            pass
+        status = breaker.reset()
+        assert status["state"] == "closed"
+
+
+class TestAlerts:
+    def test_build_alert_from_unhealthy(self):
+        alert = build_alert_from_health({"healthy": False, "checks": [{"component": "rpc", "healthy": False}]})
+        assert alert is not None
+        assert alert.severity == "critical"
+
+    def test_no_alert_when_healthy(self):
+        assert build_alert_from_health({"healthy": True, "checks": []}) is None
+
+    def test_sync_alert(self):
+        alert = build_alert_from_sync({"drifted": 2, "failed": 0})
+        assert alert is not None
+        assert alert.severity == "critical"
+
+    def test_evaluate_and_deliver(self):
+        delivered = []
+
+        def fake_post(url, payload):
+            delivered.append(payload)
+            return 200, "ok"
+
+        result = evaluate_and_alert(
+            health_result={
+                "healthy": False,
+                "checks": [{"component": "contract", "healthy": False}],
+            },
+            webhook_url="http://localhost/hook",
+            http_post_fn=fake_post,
+        )
+        assert result["alert_count"] == 1
+        assert len(delivered) == 1

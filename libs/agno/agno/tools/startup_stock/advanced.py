@@ -9,7 +9,10 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, Callable, List, Optional
 
+from agno.tools.startup_stock.alerts import evaluate_and_alert
 from agno.tools.startup_stock.audit import AuditStore
+from agno.tools.startup_stock.base import shares_to_wei, wei_to_shares
+from agno.tools.startup_stock.circuit_breaker import CircuitBreaker
 from agno.tools.startup_stock.deploy import deploy_multisig, deploy_vesting_vault
 from agno.tools.startup_stock.health import run_health_check
 from agno.tools.startup_stock.instruments import (
@@ -33,7 +36,8 @@ from agno.tools.startup_stock.reports import (
 )
 from agno.tools.startup_stock.snapshots import CapTableSnapshotStore
 from agno.tools.startup_stock.sync_daemon import CapTableSyncDaemon
-from agno.tools.startup_stock.toolkit import StartupStockTools, _to_json, shares_to_wei, wei_to_shares
+from agno.tools.startup_stock.toolkit import StartupStockTools, _to_json
+from agno.tools.startup_stock.transfer_policy import TransferPolicyStore
 from agno.tools.startup_stock.valuation import (
     Valuation409AStore,
     compute_option_intrinsic_value,
@@ -69,6 +73,9 @@ class StartupStockAdvancedTools(StartupStockTools):
         enable_option_pool: bool = True,
         enable_valuation: bool = True,
         enable_instruments: bool = True,
+        enable_transfer_policy: bool = True,
+        enable_alerts: bool = True,
+        alert_webhook_url: Optional[str] = None,
         all_advanced: bool = False,
         **kwargs,
     ):
@@ -83,12 +90,15 @@ class StartupStockAdvancedTools(StartupStockTools):
         self._enable_option_pool = all_advanced or enable_option_pool
         self._enable_valuation = all_advanced or enable_valuation
         self._enable_instruments = all_advanced or enable_instruments
+        self._enable_transfer_policy = all_advanced or enable_transfer_policy
+        self._enable_alerts = all_advanced or enable_alerts
 
         super().__init__(**kwargs)
 
         self.vesting_vault_address = vesting_vault_address or getenv("STARTUP_STOCK_VESTING_VAULT")
         self.multisig_address = multisig_address or getenv("STARTUP_STOCK_MULTISIG_ADDRESS")
         self.webhook_url = webhook_url or getenv("STARTUP_STOCK_WEBHOOK_URL")
+        self.alert_webhook_url = alert_webhook_url or getenv("STARTUP_STOCK_ALERT_WEBHOOK_URL")
 
         vesting_db = str(Path(gettempdir()) / "startup_stock_vesting.db")
         webhook_db = str(Path(gettempdir()) / "startup_stock_webhooks.db")
@@ -97,6 +107,7 @@ class StartupStockAdvancedTools(StartupStockTools):
         option_pool_db = str(Path(gettempdir()) / "startup_stock_option_pool.db")
         valuation_db = str(Path(gettempdir()) / "startup_stock_valuation.db")
         instruments_db = str(Path(gettempdir()) / "startup_stock_instruments.db")
+        policy_db = str(Path(gettempdir()) / "startup_stock_transfer_policy.db")
         self.vesting_store = VestingStore(vesting_db)
         self.webhook_store = WebhookDeliveryStore(webhook_db)
         self.audit_store = AuditStore(audit_db)
@@ -104,6 +115,8 @@ class StartupStockAdvancedTools(StartupStockTools):
         self.option_pool_store = OptionPoolStore(option_pool_db)
         self.valuation_store = Valuation409AStore(valuation_db)
         self.instrument_store = InstrumentStore(instruments_db)
+        self.transfer_policy_store = TransferPolicyStore(policy_db)
+        self.circuit_breaker = CircuitBreaker(name="startup_stock_rpc")
 
         assert self.private_key is not None
         self.vesting_manager = VestingManager(
@@ -295,6 +308,45 @@ class StartupStockAdvancedTools(StartupStockTools):
                 ]
             )
 
+        if self._enable_transfer_policy:
+            extra_tools.extend(
+                [
+                    self.transfer_shares,
+                    self.get_transfer_policy,
+                    self.update_transfer_policy,
+                    self.add_transfer_allowlist,
+                    self.remove_transfer_allowlist,
+                    self.list_transfer_allowlist,
+                    self.check_transfer_allowed,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.aget_transfer_policy, "get_transfer_policy"),
+                    (self.aupdate_transfer_policy, "update_transfer_policy"),
+                    (self.aadd_transfer_allowlist, "add_transfer_allowlist"),
+                    (self.aremove_transfer_allowlist, "remove_transfer_allowlist"),
+                    (self.alist_transfer_allowlist, "list_transfer_allowlist"),
+                    (self.acheck_transfer_allowed, "check_transfer_allowed"),
+                ]
+            )
+
+        if self._enable_alerts:
+            extra_tools.extend(
+                [
+                    self.evaluate_alerts,
+                    self.get_circuit_breaker_status,
+                    self.reset_circuit_breaker,
+                ]
+            )
+            extra_async.extend(
+                [
+                    (self.aevaluate_alerts, "evaluate_alerts"),
+                    (self.aget_circuit_breaker_status, "get_circuit_breaker_status"),
+                    (self.areset_circuit_breaker, "reset_circuit_breaker"),
+                ]
+            )
+
         for tool in extra_tools:
             self.register(tool)
         for async_fn, tool_name in extra_async:
@@ -326,6 +378,34 @@ class StartupStockAdvancedTools(StartupStockTools):
         result = super().sync_cap_table(dry_run=dry_run)
         self._log_audit("sync_cap_table", detail={"dry_run": dry_run})
         return result
+
+    # -------------------------------------------------------------------------
+    # Audit tools
+    # -------------------------------------------------------------------------
+
+    def transfer_shares(self, to_address: str, shares: float) -> str:
+        """Transfer shares with transfer-policy enforcement when enabled."""
+        if self._enable_transfer_policy:
+            check = self.transfer_policy_store.check_transfer_allowed(
+                from_address=self.account.address,
+                to_address=to_address,
+            )
+            if not check.get("allowed"):
+                return _to_json({"error": "Transfer blocked by policy", **check})
+        try:
+
+            def _do_transfer() -> str:
+                return StartupStockTools.transfer_shares(self, to_address, shares)
+
+            result = self.circuit_breaker.call(_do_transfer)
+            self._log_audit(
+                "transfer_shares",
+                target=to_address.lower(),
+                detail={"shares": shares},
+            )
+            return result
+        except Exception as e:
+            return _to_json({"error": str(e), "to_address": to_address})
 
     # -------------------------------------------------------------------------
     # Audit tools
@@ -989,6 +1069,105 @@ class StartupStockAdvancedTools(StartupStockTools):
         except Exception as e:
             return _to_json({"error": str(e)})
 
+    def get_transfer_policy(self) -> str:
+        """Get current transfer restriction and allowlist policy."""
+        try:
+            policy = self.transfer_policy_store.get_policy()
+            return _to_json(policy.to_dict())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def update_transfer_policy(
+        self,
+        restricted: Optional[bool] = None,
+        require_allowlist: Optional[bool] = None,
+        lockup_until: Optional[str] = None,
+    ) -> str:
+        """Update transfer restriction policy settings."""
+        try:
+            policy = self.transfer_policy_store.update_policy(
+                restricted=restricted,
+                require_allowlist=require_allowlist,
+                lockup_until=lockup_until,
+            )
+            self._log_audit("update_transfer_policy", detail=policy.to_dict())
+            return _to_json(policy.to_dict())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def add_transfer_allowlist(self, wallet_address: str, label: Optional[str] = None) -> str:
+        """Add a wallet to the transfer allowlist."""
+        try:
+            result = self.transfer_policy_store.add_to_allowlist(wallet_address, label=label)
+            self._log_audit("add_transfer_allowlist", target=wallet_address.lower(), detail=result)
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e), "wallet_address": wallet_address})
+
+    def remove_transfer_allowlist(self, wallet_address: str) -> str:
+        """Remove a wallet from the transfer allowlist."""
+        try:
+            removed = self.transfer_policy_store.remove_from_allowlist(wallet_address)
+            self._log_audit("remove_transfer_allowlist", target=wallet_address.lower())
+            return _to_json({"wallet_address": wallet_address.lower(), "removed": removed})
+        except Exception as e:
+            return _to_json({"error": str(e), "wallet_address": wallet_address})
+
+    def list_transfer_allowlist(self) -> str:
+        """List wallets on the transfer allowlist."""
+        try:
+            entries = self.transfer_policy_store.list_allowlist()
+            return _to_json({"allowlist": entries, "count": len(entries)})
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def check_transfer_allowed(self, from_address: str, to_address: str) -> str:
+        """Check whether a transfer is allowed under current policy."""
+        try:
+            return _to_json(self.transfer_policy_store.check_transfer_allowed(from_address, to_address))
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    # -------------------------------------------------------------------------
+    # Alerts and circuit breaker tools
+    # -------------------------------------------------------------------------
+
+    def evaluate_alerts(self, include_sync_preview: bool = True) -> str:
+        """Evaluate health/sync state and optionally send alert webhooks."""
+        try:
+            health_result = json.loads(self.run_health_check())
+            sync_result = None
+            if include_sync_preview:
+                sync_result = json.loads(self.sync_cap_table(dry_run=True))
+            result = evaluate_and_alert(
+                health_result=health_result if "error" not in health_result else None,
+                sync_result=sync_result if sync_result and "error" not in sync_result else None,
+                webhook_url=self.alert_webhook_url if self._enable_alerts else None,
+            )
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def get_circuit_breaker_status(self) -> str:
+        """Get RPC circuit breaker state."""
+        try:
+            return _to_json(self.circuit_breaker.status())
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    def reset_circuit_breaker(self) -> str:
+        """Reset the RPC circuit breaker to closed state."""
+        try:
+            result = self.circuit_breaker.reset()
+            self._log_audit("reset_circuit_breaker", detail=result)
+            return _to_json(result)
+        except Exception as e:
+            return _to_json({"error": str(e)})
+
+    # -------------------------------------------------------------------------
+    # Async variants
+    # -------------------------------------------------------------------------
+
     # -------------------------------------------------------------------------
     # Async variants
     # -------------------------------------------------------------------------
@@ -1162,3 +1341,35 @@ class StartupStockAdvancedTools(StartupStockTools):
 
     async def aget_instruments_summary(self) -> str:
         return self.get_instruments_summary()
+
+    async def aget_transfer_policy(self) -> str:
+        return self.get_transfer_policy()
+
+    async def aupdate_transfer_policy(
+        self,
+        restricted: Optional[bool] = None,
+        require_allowlist: Optional[bool] = None,
+        lockup_until: Optional[str] = None,
+    ) -> str:
+        return self.update_transfer_policy(restricted, require_allowlist, lockup_until)
+
+    async def aadd_transfer_allowlist(self, wallet_address: str, label: Optional[str] = None) -> str:
+        return self.add_transfer_allowlist(wallet_address, label=label)
+
+    async def aremove_transfer_allowlist(self, wallet_address: str) -> str:
+        return self.remove_transfer_allowlist(wallet_address)
+
+    async def alist_transfer_allowlist(self) -> str:
+        return self.list_transfer_allowlist()
+
+    async def acheck_transfer_allowed(self, from_address: str, to_address: str) -> str:
+        return self.check_transfer_allowed(from_address, to_address)
+
+    async def aevaluate_alerts(self, include_sync_preview: bool = True) -> str:
+        return self.evaluate_alerts(include_sync_preview=include_sync_preview)
+
+    async def aget_circuit_breaker_status(self) -> str:
+        return self.get_circuit_breaker_status()
+
+    async def areset_circuit_breaker(self) -> str:
+        return self.reset_circuit_breaker()

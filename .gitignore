@@ -86,7 +86,10 @@ cookbook/12_context/demo-wiki-git/
 
 # AI
 .claude/
-.cursor/
+.cursor/*
+# Keep the Cloud Agent environment config versioned with the repo
+!.cursor/environment.json
+!.cursor/install.sh
 .conductor/
 .context/
 .codex/
