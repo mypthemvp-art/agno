@@ -36,6 +36,10 @@ Works on macOS, Linux, and Windows via Python.
 - **409A Valuation** — Fair market value records, validity checks, strike suggestions
 - **SAFE/SAFT Instruments** — Track convertible instruments and model conversion
 - **AI Agent** — Natural-language cap table management with structured output
+- **Option Pool** — Employee option pool sizing, grants, cancel, and exercise tracking
+- **Transfer Policy** — Allowlist and lockup restrictions on share transfers
+- **Circuit Breaker** — RPC failure protection for production hardening
+- **Health Alerts** — Webhook alerts from health checks and sync drift
 
 ## Prerequisites
 
@@ -114,6 +118,12 @@ print(tools.sync_cap_table(dry_run=False))
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py pool grant --name Eve --shares 5000 --strike 0.50
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py valuation record --fmv 0.50 --firm "Acme Valuation"
 .venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py safe add --name SeedFund --amount 250000 --cap 5000000 --discount 0.20
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py options set --size 10000
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py options grant --name Engineer --wallet 0x742d... --shares 1000
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py policy update --restricted true --require-allowlist true
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py policy allowlist-add --wallet 0x742d... --label employee
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py alerts evaluate
+.venvs/demo/bin/python cookbook/91_tools/startup_stock/cli.py circuit status
 ```
 
 ## Examples
@@ -137,6 +147,8 @@ print(tools.sync_cap_table(dry_run=False))
 | `15_sync_daemon.py` | Continuous cap table sync daemon |
 | `16_option_pool_409a_safe.py` | Option pool, 409A valuation, and SAFE conversion |
 | `17_equity_instruments_agent.py` | AI advisor for pool, 409A, and SAFE instruments |
+| `16_option_pool_and_transfers.py` | Option pool grants and transfer allowlist policy |
+| `17_production_hardening.py` | Health alerts and RPC circuit breaker demo |
 | `menubar.py` | macOS menu bar app (requires `pip install rumps`) |
 | `cli.py` | macOS/Linux CLI for cap table operations |
 | `sample_cap_table.csv` | Sample CSV cap table for import |

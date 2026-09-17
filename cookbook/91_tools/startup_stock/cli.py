@@ -28,6 +28,9 @@ Usage:
     python cli.py pool grant --name Eve --shares 5000 --strike 0.50
     python cli.py valuation record --fmv 0.50 --firm "Acme Valuation"
     python cli.py safe add --name SeedFund --amount 250000 --cap 5000000 --discount 0.20
+    python cli.py policy update --restricted true --require-allowlist true
+    python cli.py alerts evaluate
+    python cli.py circuit status
 """
 
 import argparse
@@ -89,7 +92,7 @@ def cmd_info(args: argparse.Namespace) -> None:
 def cmd_add(args: argparse.Namespace) -> None:
     tools = _load_tools(require_contract=False)
     result = json.loads(tools.add_investor(args.name, args.wallet, args.shares))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(
         f"Added {result['investor_name']}: {result['shares']} shares ({result['status']})"
@@ -121,7 +124,7 @@ def cmd_balance(args: argparse.Namespace) -> None:
     else:
         tools = _load_tools()
         result = json.loads(tools.get_investor_balance(args.wallet))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(f"Wallet: {result['wallet_address']}")
     print(f"Shares: {result['shares']:,.4f}")
@@ -130,7 +133,7 @@ def cmd_balance(args: argparse.Namespace) -> None:
 def cmd_import(args: argparse.Namespace) -> None:
     tools = _load_tools(require_contract=False)
     result = json.loads(tools.import_cap_table(args.file))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(f"Imported {result['imported']} investors from {result['file_path']}")
 
@@ -138,7 +141,7 @@ def cmd_import(args: argparse.Namespace) -> None:
 def cmd_reconcile(args: argparse.Namespace) -> None:
     tools = _load_tools()
     result = json.loads(tools.reconcile_cap_table())
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(f"Synced:  {result.get('synced', 0)}")
     print(f"Pending: {result.get('pending', 0)}")
@@ -149,7 +152,7 @@ def cmd_reconcile(args: argparse.Namespace) -> None:
 def cmd_deploy(args: argparse.Namespace) -> None:
     tools = _load_tools(require_contract=False)
     result = json.loads(tools.deploy_token(args.name, args.symbol, args.max_shares))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(f"Deployed to: {result['contract_address']}")
     print(f"export STARTUP_STOCK_CONTRACT_ADDRESS={result['contract_address']}")
@@ -158,7 +161,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
 def cmd_deploy_vault(args: argparse.Namespace) -> None:
     tools = _load_advanced()
     result = json.loads(tools.deploy_vesting_vault(token_address=args.token))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(f"Deployed VestingVault to: {result['contract_address']}")
     print(f"export STARTUP_STOCK_VESTING_VAULT={result['contract_address']}")
@@ -167,7 +170,7 @@ def cmd_deploy_vault(args: argparse.Namespace) -> None:
 def cmd_deploy_multisig(args: argparse.Namespace) -> None:
     tools = _load_advanced()
     result = json.loads(tools.deploy_multisig(args.owners, args.required))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(f"Deployed MultiSig to: {result['contract_address']}")
     print(f"export STARTUP_STOCK_MULTISIG_ADDRESS={result['contract_address']}")
@@ -177,7 +180,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
     tools = _load_tools()
     dry_run = not args.live
     result = json.loads(tools.sync_cap_table(dry_run=dry_run))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
 
     mode = "DRY RUN" if dry_run else "LIVE"
@@ -201,7 +204,7 @@ def cmd_sync(args: argparse.Namespace) -> None:
 def cmd_report(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.generate_equity_report())
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -209,7 +212,7 @@ def cmd_report(args: argparse.Namespace) -> None:
 def cmd_export(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.export_compliance_report(args.file, fmt=args.format))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(
         f"Exported {result['investor_count']} investors to {result['file_path']} ({result['format']})"
@@ -225,7 +228,7 @@ def cmd_dilution(args: argparse.Namespace) -> None:
             option_pool_increase=args.option_pool,
         )
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -240,7 +243,7 @@ def cmd_vesting_create(args: argparse.Namespace) -> None:
             vesting_days=args.vesting_days,
         )
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -248,7 +251,7 @@ def cmd_vesting_create(args: argparse.Namespace) -> None:
 def cmd_vesting_get(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.get_vesting_schedule(args.wallet))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -256,7 +259,7 @@ def cmd_vesting_get(args: argparse.Namespace) -> None:
 def cmd_vesting_list(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.list_vesting_schedules())
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -264,7 +267,7 @@ def cmd_vesting_list(args: argparse.Namespace) -> None:
 def cmd_vesting_release(args: argparse.Namespace) -> None:
     tools = _load_advanced()
     result = json.loads(tools.release_vested_shares(args.wallet))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -272,7 +275,7 @@ def cmd_vesting_release(args: argparse.Namespace) -> None:
 def cmd_multisig_info(args: argparse.Namespace) -> None:
     tools = _load_advanced()
     result = json.loads(tools.get_multisig_info())
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -280,7 +283,7 @@ def cmd_multisig_info(args: argparse.Namespace) -> None:
 def cmd_webhooks_poll(args: argparse.Namespace) -> None:
     tools = _load_advanced()
     result = json.loads(tools.poll_transfer_webhooks(lookback_blocks=args.lookback))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -305,7 +308,7 @@ def cmd_webhooks_daemon(args: argparse.Namespace) -> None:
 def cmd_audit(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.get_audit_log(limit=args.limit, action=args.action))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -317,7 +320,7 @@ def cmd_audit_log(args: argparse.Namespace) -> None:
             action=args.action, target=args.target, detail=args.detail
         )
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -325,7 +328,7 @@ def cmd_audit_log(args: argparse.Namespace) -> None:
 def cmd_health(args: argparse.Namespace) -> None:
     tools = _load_advanced()
     result = json.loads(tools.run_health_check())
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -333,7 +336,7 @@ def cmd_health(args: argparse.Namespace) -> None:
 def cmd_snapshot_create(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.create_cap_table_snapshot(args.label))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -341,7 +344,7 @@ def cmd_snapshot_create(args: argparse.Namespace) -> None:
 def cmd_snapshot_list(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.list_cap_table_snapshots(limit=args.limit))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -351,7 +354,7 @@ def cmd_snapshot_compare(args: argparse.Namespace) -> None:
     result = json.loads(
         tools.compare_cap_table_snapshots(args.snapshot_a, args.snapshot_b)
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -376,7 +379,7 @@ def cmd_sync_daemon(args: argparse.Namespace) -> None:
 def cmd_pool_set(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.set_option_pool(args.shares))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -384,7 +387,7 @@ def cmd_pool_set(args: argparse.Namespace) -> None:
 def cmd_pool_get(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.get_option_pool())
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -402,7 +405,7 @@ def cmd_pool_grant(args: argparse.Namespace) -> None:
             notes=args.notes,
         )
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -410,7 +413,7 @@ def cmd_pool_grant(args: argparse.Namespace) -> None:
 def cmd_pool_list(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.list_option_grants(status=args.status))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -418,7 +421,7 @@ def cmd_pool_list(args: argparse.Namespace) -> None:
 def cmd_pool_exercise(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.exercise_options(args.grant_id, args.shares))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -436,7 +439,7 @@ def cmd_valuation_record(args: argparse.Namespace) -> None:
             notes=args.notes,
         )
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -444,7 +447,7 @@ def cmd_valuation_record(args: argparse.Namespace) -> None:
 def cmd_valuation_latest(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.get_latest_409a(share_class=args.share_class))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -452,7 +455,7 @@ def cmd_valuation_latest(args: argparse.Namespace) -> None:
 def cmd_valuation_status(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.check_409a_status(share_class=args.share_class))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -469,7 +472,7 @@ def cmd_safe_add(args: argparse.Namespace) -> None:
             notes=args.notes,
         )
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -477,7 +480,7 @@ def cmd_safe_add(args: argparse.Namespace) -> None:
 def cmd_safe_list(args: argparse.Namespace) -> None:
     tools = _load_advanced(require_contract=False)
     result = json.loads(tools.list_safe_instruments(status=args.status))
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -491,7 +494,7 @@ def cmd_safe_preview(args: argparse.Namespace) -> None:
             pre_money_shares=args.pre_money_shares,
         )
     )
-    if "error" in result:
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -505,7 +508,87 @@ def cmd_safe_convert(args: argparse.Namespace) -> None:
             pre_money_shares=args.pre_money_shares,
         )
     )
-    if "error" in result:
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_policy_get(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.get_transfer_policy())
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_policy_update(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(
+        tools.update_transfer_policy(
+            restricted=args.restricted,
+            require_allowlist=args.require_allowlist,
+            lockup_until=args.lockup_until,
+        )
+    )
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_policy_allowlist_add(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.add_transfer_allowlist(args.wallet, label=args.label))
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_policy_allowlist_remove(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.remove_transfer_allowlist(args.wallet))
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_policy_allowlist_list(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.list_transfer_allowlist())
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_policy_check(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.check_transfer_allowed(args.from_wallet, args.to_wallet))
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_alerts_evaluate(args: argparse.Namespace) -> None:
+    tools = _load_advanced()
+    result = json.loads(
+        tools.evaluate_alerts(include_sync_preview=not args.skip_sync_preview)
+    )
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_circuit_status(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.get_circuit_breaker_status())
+    if result.get("error"):
+        _print_error(result)
+    print(json.dumps(result, indent=2))
+
+
+def cmd_circuit_reset(args: argparse.Namespace) -> None:
+    tools = _load_advanced(require_contract=False)
+    result = json.loads(tools.reset_circuit_breaker())
+    if result.get("error"):
         _print_error(result)
     print(json.dumps(result, indent=2))
 
@@ -747,6 +830,55 @@ def main() -> None:
     safe_convert.add_argument("--price", type=float, required=True)
     safe_convert.add_argument("--pre-money-shares", type=float, default=None)
 
+    policy_parser = subparsers.add_parser("policy", help="Transfer policy commands")
+    policy_sub = policy_parser.add_subparsers(dest="policy_command", required=True)
+    policy_sub.add_parser("get", help="Show transfer policy")
+    policy_update = policy_sub.add_parser("update", help="Update transfer policy")
+    policy_update.add_argument(
+        "--restricted",
+        type=lambda v: v.lower() in ("1", "true", "yes"),
+        default=None,
+        help="true/false",
+    )
+    policy_update.add_argument(
+        "--require-allowlist",
+        dest="require_allowlist",
+        type=lambda v: v.lower() in ("1", "true", "yes"),
+        default=None,
+        help="true/false",
+    )
+    policy_update.add_argument(
+        "--lockup-until", dest="lockup_until", help="ISO-8601 lockup end"
+    )
+    policy_allow_add = policy_sub.add_parser(
+        "allowlist-add", help="Add allowlist wallet"
+    )
+    policy_allow_add.add_argument("--wallet", required=True)
+    policy_allow_add.add_argument("--label")
+    policy_allow_remove = policy_sub.add_parser(
+        "allowlist-remove", help="Remove allowlist wallet"
+    )
+    policy_allow_remove.add_argument("--wallet", required=True)
+    policy_sub.add_parser("allowlist-list", help="List allowlist wallets")
+    policy_check = policy_sub.add_parser("check", help="Check if a transfer is allowed")
+    policy_check.add_argument("--from-wallet", dest="from_wallet", required=True)
+    policy_check.add_argument("--to-wallet", dest="to_wallet", required=True)
+
+    alerts_parser = subparsers.add_parser("alerts", help="Alert evaluation commands")
+    alerts_sub = alerts_parser.add_subparsers(dest="alerts_command", required=True)
+    alerts_eval = alerts_sub.add_parser("evaluate", help="Evaluate health/sync alerts")
+    alerts_eval.add_argument(
+        "--skip-sync-preview",
+        dest="skip_sync_preview",
+        action="store_true",
+        help="Skip dry-run sync preview when evaluating alerts",
+    )
+
+    circuit_parser = subparsers.add_parser("circuit", help="Circuit breaker commands")
+    circuit_sub = circuit_parser.add_subparsers(dest="circuit_command", required=True)
+    circuit_sub.add_parser("status", help="Show circuit breaker status")
+    circuit_sub.add_parser("reset", help="Reset circuit breaker to closed")
+
     args = parser.parse_args()
 
     if args.command == "vesting":
@@ -819,6 +951,30 @@ def main() -> None:
             "convert": cmd_safe_convert,
         }
         safe_commands[args.safe_command](args)
+        return
+
+    if args.command == "policy":
+        policy_commands = {
+            "get": cmd_policy_get,
+            "update": cmd_policy_update,
+            "allowlist-add": cmd_policy_allowlist_add,
+            "allowlist-remove": cmd_policy_allowlist_remove,
+            "allowlist-list": cmd_policy_allowlist_list,
+            "check": cmd_policy_check,
+        }
+        policy_commands[args.policy_command](args)
+        return
+
+    if args.command == "alerts":
+        if args.alerts_command == "evaluate":
+            cmd_alerts_evaluate(args)
+        return
+
+    if args.command == "circuit":
+        if args.circuit_command == "status":
+            cmd_circuit_status(args)
+        elif args.circuit_command == "reset":
+            cmd_circuit_reset(args)
         return
 
     commands = {

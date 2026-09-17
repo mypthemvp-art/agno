@@ -18,9 +18,18 @@
 
 ### cli.py
 
-**Status:** PENDING
+**Status:** PASS
 
-**Description:** macOS CLI for cap table operations.
+**Description:** macOS/Linux CLI for cap table operations. Ran end-to-end offline
+(local SQLite cap table, no live chain): `import`, `add`, `list`, `report`,
+`dilution`, `snapshot create/list`, `options set/grant/list`,
+`policy update/allowlist-add/check`, `audit record/list`, `export`, and
+`circuit status`.
+
+**Result:** All commands succeeded. Fixed a bug in `cmd_add`: it checked
+`if "error" in result` but `add_investor` returns a `CapTableEntry` dict that
+always includes an `error` key (`None` on success), so every successful add
+printed `Error: None` and exited non-zero. Now checks `result.get("error")`.
 
 ---
 
@@ -88,6 +97,18 @@
 
 ---
 
+### 16_option_pool_and_transfers.py
+
+**Status:** PASS (unit)
+
+**Description:** Option pool sizing/grants and transfer allowlist policy. Covered by
+`test_startup_stock_phase7.py` (option pool + transfer policy).
+
+**Result:** Phase 7 unit tests pass for pool grants, cancel/exercise accounting,
+and allowlist enforcement.
+
+---
+
 ### 17_equity_instruments_agent.py
 
 **Status:** PENDING
@@ -96,12 +117,25 @@
 
 ---
 
+### 17_production_hardening.py
+
+**Status:** PASS (unit)
+
+**Description:** Health alert evaluation and RPC circuit breaker. Covered by
+`test_startup_stock_phase7.py` (circuit breaker + alerts).
+
+**Result:** Phase 7 unit tests pass for breaker open/reset and alert delivery hooks.
+
+---
+
 ### test_startup_stock_phase7.py
 
 **Status:** PASS
 
-**Description:** Unit tests for option pool grants/exercise, 409A valuation helpers, and SAFE conversion math.
+**Description:** Unioned Phase 7 coverage for option pool, 409A valuation, SAFE
+conversion, transfer policy, circuit breaker, and alerts.
 
-**Result:** 7 tests passed as part of 57 total startup stock unit tests.
+**Result:** 15/15 unit tests passed after merging main option-pool/409A/SAFE APIs
+with branch transfer-policy/alerts/circuit-breaker features.
 
 ---

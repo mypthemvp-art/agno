@@ -287,11 +287,7 @@ def test_create_arrow_selector_transitions_to_name_prompt_in_narrow_pty(tmp_path
                     break
                 output += chunk
                 # Wait until the full compact selector is painted before sending keys.
-                if (
-                    b"agentos-render" in output
-                    and (b"move" in output or b"Template" in output)
-                    and not sent_selection
-                ):
+                if b"agentos-render" in output and (b"move" in output or b"Template" in output) and not sent_selection:
                     os.write(master_fd, b"\x1b[B\r")
                     sent_selection = True
                 if b"Project name" in output and not sent_abort:
