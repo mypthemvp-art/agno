@@ -31,7 +31,15 @@ echo "Setting up .venvs/demo (demo)..."
 ./scripts/demo_setup.sh
 
 # The startup_stock blockchain MVP needs web3 (the agno[evm] extra).
+# Install it into BOTH venvs:
+#   .venvs/demo -> running the cookbook CLI/examples
+#   .venv       -> the startup_stock unit tests (libs/agno/tests/unit/tools/
+#                  test_startup_stock*.py), which import web3 and are run with
+#                  pytest from .venv per AGENTS.md.
 echo "Installing agno[evm] into the demo venv..."
 VIRTUAL_ENV="${REPO_ROOT}/.venvs/demo" uv pip install -e "libs/agno[evm]"
+
+echo "Installing agno[evm] into the dev venv..."
+VIRTUAL_ENV="${REPO_ROOT}/.venv" uv pip install -e "libs/agno[evm]"
 
 echo "Environment setup complete."
