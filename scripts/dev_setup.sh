@@ -71,11 +71,12 @@ VIRTUAL_ENV="${VENV_DIR}" uv pip install -e "${AGNOCTL_DIR}[dev]" -e "${AGNO_DIR
 
 # Copy activation command to clipboard
 ACTIVATE_CMD="source .venv/bin/activate"
-if command -v pbcopy &> /dev/null; then
-    echo -n "${ACTIVATE_CMD}" | pbcopy
+# Copying to the clipboard is best-effort: it must never abort setup (set -e) in
+# headless/CI/remote environments where pbcopy/xclip exist but no display is
+# attached (e.g. xclip: "Can't open display").
+if command -v pbcopy &> /dev/null && echo -n "${ACTIVATE_CMD}" | pbcopy 2>/dev/null; then
     CLIPBOARD_MSG="(Copied to clipboard. Just paste and hit enter.)"
-elif command -v xclip &> /dev/null; then
-    echo -n "${ACTIVATE_CMD}" | xclip -selection clipboard
+elif command -v xclip &> /dev/null && echo -n "${ACTIVATE_CMD}" | xclip -selection clipboard 2>/dev/null; then
     CLIPBOARD_MSG="(Copied to clipboard. Just paste and hit enter.)"
 else
     CLIPBOARD_MSG=""
