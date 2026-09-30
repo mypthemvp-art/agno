@@ -1,0 +1,4 @@
+{
+  "name": "Agno dev",
+  "install": "set -e\ncurl -LsSf https://astral.sh/uv/install.sh | sh\nexport PATH=\"$HOME/.local/bin:$PATH\"\n./scripts/dev_setup.sh\n./scripts/demo_setup.sh"
+}

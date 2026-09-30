@@ -86,7 +86,8 @@ cookbook/12_context/demo-wiki-git/
 
 # AI
 .claude/
-.cursor/
+.cursor/*
+!.cursor/environment.json
 .conductor/
 .context/
 .codex/
